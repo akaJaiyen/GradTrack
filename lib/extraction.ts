@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const gradeSchema = z.enum(["A", "B+", "B", "C+", "C", "D+", "D", "F", "P", "S", "W", "I"]);
+export const gradeSchema = z.enum(["A", "B+", "B", "C+", "C", "D+", "D", "F", "P", "S", "W", "I", "N"]);
 export const extractedCourseSchema = z.object({
   code: z.string().trim().min(2).max(40),
   name: z.string().trim().max(250),
