@@ -6,7 +6,12 @@ import { currentToken, hashToken, newToken, workspaceCookie } from "@/lib/worksp
 export async function POST() {
   const db = adminDb(); if (!db) return NextResponse.json({ ok: false, demo: true });
   const existing = await currentToken();
-  if (existing) return NextResponse.json({ ok: true, existing: true });
+  if (existing) {
+    // A browser can retain its cookie after a database reset or workspace expiry.
+    // Only reuse it when the backing workspace is still active.
+    const { data } = await db.from("workspaces").select("id").eq("anonymous_token_hash", hashToken(existing)).gt("expires_at", new Date().toISOString()).maybeSingle();
+    if (data) return NextResponse.json({ ok: true, existing: true });
+  }
   const token = newToken(); const expiresAt = new Date(Date.now() + 30 * 864e5).toISOString();
   const { error: insertError } = await db.from("workspaces").insert({ anonymous_token_hash: hashToken(token), expires_at: expiresAt });
   if (insertError) return error("Could not create workspace", 500);

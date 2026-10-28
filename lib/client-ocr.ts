@@ -5,6 +5,8 @@ export type OcrResult = { text: string; confidence: number; courses: ReturnType<
 export async function extractLocally(file: File): Promise<OcrResult> {
   if (file.type === "application/pdf") {
     const pdfjs = await import("pdfjs-dist");
+    // Next bundles the worker separately; without this, PDF.js often fails only in the browser.
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
     const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     let text = "";
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) text += "\n" + (await (await document.getPage(pageNumber)).getTextContent()).items.map((item: unknown) => "str" in (item as object) ? String((item as { str: string }).str) : "").join(" ");
