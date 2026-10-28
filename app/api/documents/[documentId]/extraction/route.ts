@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { adminDb } from "@/lib/supabase";
-import { currentToken, hashToken } from "@/lib/workspace";
 import { error, unavailable } from "@/lib/api";
+import { workspaceContext } from "@/lib/server-workspace";
 const bodySchema = z.object({ rawExtractionJson: z.unknown(), confidence: z.number().min(0).max(1), status: z.enum(["review_needed", "ready", "failed"]) });
-async function allowed(documentId: string) { const db = adminDb(), token = await currentToken(); if (!db || !token) return { db, ok: false }; const { data } = await db.from("documents").select("id,workspace_id").eq("id", documentId).maybeSingle(); if (!data) return { db, ok: false }; const { data: workspace } = await db.from("workspaces").select("id").eq("id", data.workspace_id).eq("anonymous_token_hash", hashToken(token)).maybeSingle(); return { db, ok: !!workspace }; }
+async function allowed(documentId: string) { const { db, workspaceId } = await workspaceContext(); if (!db || !workspaceId) return { db, ok: false }; const { data } = await db.from("documents").select("id").eq("id", documentId).eq("workspace_id", workspaceId).maybeSingle(); return { db, ok: !!data }; }
 export async function POST(request: NextRequest, { params }: { params: Promise<{ documentId: string }> }) { const { documentId } = await params, parsed = bodySchema.safeParse(await request.json()); if (!parsed.success) return error("Invalid extraction data"); const access = await allowed(documentId); if (!access.db) return unavailable(); if (!access.ok) return error("Unauthorized", 401); const { error: dbError } = await access.db.from("document_extractions").insert({ document_id: documentId, raw_extraction_json: parsed.data.rawExtractionJson, confidence: parsed.data.confidence, extraction_version: "client-ocr-v1" }); if (dbError) return error("Could not save extraction", 500); await access.db.from("documents").update({ status: parsed.data.status }).eq("id", documentId); return NextResponse.json({ ok: true }); }

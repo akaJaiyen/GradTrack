@@ -1,0 +1,9 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { error, unavailable } from "@/lib/api";
+import { workspaceContext } from "@/lib/server-workspace";
+const grade = z.enum(["A","B+","B","C+","C","D+","D","F","P","S","W","I"]);
+const courseInput = z.object({ code:z.string().trim().min(1).max(40), nameTh:z.string().trim().max(250).optional(), nameEn:z.string().trim().max(250).optional(), credits:z.number().positive().max(99), grade:grade.optional().nullable(), term:z.string().max(50).optional().nullable(), year:z.number().int().min(1).max(9999).optional().nullable(), verified:z.boolean().optional(), source:z.enum(["transcript","manual"]).default("manual") });
+const row = (value: z.infer<typeof courseInput>, workspaceId: string) => ({ workspace_id:workspaceId, code:value.code, name_th:value.nameTh || null, name_en:value.nameEn || null, credits:value.credits, grade:value.grade || null, term:value.term || null, year:value.year || null, verified_by_user:value.verified ?? false, source:value.source });
+export async function GET() { const {db,workspaceId}=await workspaceContext(); if(!db)return unavailable(); if(!workspaceId)return error("Unauthorized",401); const {data,error:dbError}=await db.from("courses").select("*").eq("workspace_id",workspaceId).order("created_at"); return dbError?error("Could not load courses",500):NextResponse.json({data}); }
+export async function POST(request:NextRequest) { const input=courseInput.safeParse(await request.json()); if(!input.success)return error("Invalid course"); const {db,workspaceId}=await workspaceContext(); if(!db)return unavailable(); if(!workspaceId)return error("Unauthorized",401); const {data,error:dbError}=await db.from("courses").insert(row(input.data,workspaceId)).select().single(); return dbError?error("Could not save course",500):NextResponse.json({data},{status:201}); }
