@@ -1,41 +1,191 @@
 "use client";
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { FileText, GraduationCap, LockKeyhole, ShieldCheck, Upload, Plus, Trash2, Wand2 } from "lucide-react";
-import { Course, Grade, Requirement } from "@/lib/types";
-import { extractLocally } from "@/lib/client-ocr";
-import { CatalogCourse, CurriculumNode, parseKuCpe2565Catalog, parseKuCpe2565Summary } from "@/lib/curriculum-profile";
-import { validateCurriculumDraft } from "@/lib/curriculum-validation";
+import {
+  FileText,
+  GraduationCap,
+  LockKeyhole,
+  ShieldCheck,
+  Wand2,
+} from "lucide-react";
+import { DocumentsPage } from "./gradtrack/documents-page";
+import { PrivacyPage } from "./gradtrack/privacy-page";
+import { ReviewPage } from "./gradtrack/review-page";
+import {
+  api,
+  fromCourse,
+  fromRequirement,
+  type Doc,
+  type Tab,
+  type View,
+} from "./gradtrack/shared";
+import type { Course, Requirement } from "@/lib/types";
 
-type View="overview"|"upload"|"review"|"matching"|"scenarios"|"planner"|"privacy"; type Tab="curriculum"|"student";
-type Doc={id:string;type:string;file_name:string;status:string;created_at:string};
-const grades:Grade[]=["A","B+","B","C+","C","D+","D","F","P","S","W","I","N"];
-const labels:Record<string,string>={uploaded:"อัปโหลดแล้ว",extracting:"กำลังอ่าน",review_needed:"ต้องตรวจสอบ",ready:"พร้อมใช้",failed:"อ่านไม่สำเร็จ"};
-async function api(path:string,method="GET",body?:unknown){const r=await fetch(path,{method,headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error((await r.json().catch(()=>null))?.error?.message||"Request failed");return r.json()}
-const fromCourse=(x:any):Course=>({id:x.id,code:x.code,nameTh:x.name_th||"",credits:Number(x.credits),grade:x.grade||undefined});
-const fromRequirement=(x:any):Requirement=>({id:x.id,category:x.category_name,type:x.requirement_type,code:x.required_course_code||undefined,name:x.required_course_name||undefined,minimumCredits:x.minimum_credits===null?undefined:Number(x.minimum_credits)});
-const payload=(x:Course)=>({code:x.code,nameTh:x.nameTh,credits:Number(x.credits),grade:x.grade||null,verified:true,source:"manual"});
+const navigationItems = [
+  ["overview", "ภาพรวม", GraduationCap],
+  ["upload", "เอกสารของฉัน", FileText],
+  ["review", "ตรวจสอบข้อมูล", ShieldCheck],
+  ["matching", "จับคู่รายวิชา", Wand2],
+  ["privacy", "ความเป็นส่วนตัว", LockKeyhole],
+] as const;
 
-export function GradTrackApp({initialView="overview",locale}:{initialView?:View;locale:string}){const [view,setView]=useState<View>(initialView),[tab,setTab]=useState<Tab>(()=>typeof window!=="undefined"&&new URLSearchParams(location.search).get("tab")==="student"?"student":"curriculum"),[docs,setDocs]=useState<Doc[]>([]),[courses,setCourses]=useState<Course[]>([]),[requirements,setRequirements]=useState<Requirement[]>([]),[workspace,setWorkspace]=useState(false),[notice,setNotice]=useState<string|null>(null);
-const load=async()=>{try{const w=await api("/api/workspace","POST");if(w.demo)return;setWorkspace(true);const [d,x]=await Promise.all([api("/api/documents"),api("/api/dashboard")]);setDocs(d.data);setCourses(x.courses.map(fromCourse));setRequirements(x.requirements.map(fromRequirement));}catch{setNotice("โหมดตัวอย่าง — ตั้งค่า Supabase เพื่อบันทึกข้อมูลจริง")}};useEffect(()=>{void load()},[]);
-const go=(next:View,nextTab?:Tab)=>{if(view==="review"&&next!=="review"&&document.querySelector("[data-dirty='true']")&&!confirm("มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการออกหรือไม่?"))return;const t=nextTab||tab;setView(next);if(nextTab)setTab(nextTab);history.replaceState(null,"",`/${locale}/${next==="overview"?"":next}${next==="review"?`?tab=${t}`:""}`)};
-const deleteWorkspace=async()=>{if(!confirm("ลบข้อมูลและไฟล์ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้"))return;try{await api("/api/workspace","DELETE");setWorkspace(false);setDocs([]);setCourses([]);setRequirements([]);setView("overview");history.replaceState(null,"",`/${locale}/`);setNotice("ลบ workspace แล้ว")}catch{setNotice("ลบ workspace ไม่สำเร็จ")}};
-return <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]"><aside className="border-b border-blue-100 bg-white p-5 lg:min-h-screen lg:border-r"><Link href={`/${locale}`} className="flex gap-2 text-2xl font-bold text-blue-900"><GraduationCap/>GradTrack</Link><nav className="mt-7 grid gap-1">{[["overview","ภาพรวม",GraduationCap],["upload","เอกสารของฉัน",FileText],["review","ตรวจสอบข้อมูล",ShieldCheck],["matching","จับคู่รายวิชา",Wand2],["privacy","ความเป็นส่วนตัว",LockKeyhole]] .map(([key,title,Icon]:any)=><button key={key} className={`nav-item text-left ${view===key?"active":""}`} onClick={()=>go(key)}><Icon size={18}/>{title}</button>)}</nav></aside><main className="min-w-0 p-4 sm:p-7"><h1 className="mb-2 text-2xl font-bold">{view==="upload"?"เอกสารของฉัน":view==="review"?"ตรวจสอบข้อมูล":view==="privacy"?"ความเป็นส่วนตัว":"GradTrack"}</h1>{notice&&<p className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm" role="status">{notice}</p>}{view==="overview"&&<section className="card p-6"><h2 className="font-bold">เริ่มต้นด้วยการอัปโหลดเอกสาร</h2><button className="btn btn-primary mt-4" onClick={()=>go("upload")}>ไปหน้าเอกสารของฉัน</button></section>}{view==="upload"&&<Documents docs={docs} reload={load} notice={setNotice} go={go}/>} {view==="review"&&<Review tab={tab} setTab={t=>go("review",t)} docs={docs} courses={courses} requirements={requirements} workspace={workspace} reload={load} notice={setNotice}/>} {view==="matching"&&<section className="card p-6"><h2 className="font-bold">จับคู่รายวิชา</h2><p className="mt-2 text-sm text-slate-500">ตรวจหลักสูตรและผลการเรียนจากหน้าตรวจสอบข้อมูลก่อน แล้วจึงจับคู่รายวิชาที่นี่</p></section>}{view==="privacy"&&<Privacy deleteWorkspace={deleteWorkspace} workspace={workspace}/>}</main></div>}
-
-function Privacy({deleteWorkspace,workspace}:{deleteWorkspace:()=>Promise<void>;workspace:boolean}){return <section className="max-w-3xl space-y-5"><div className="card p-6"><div className="flex items-center gap-2 font-bold text-blue-900"><LockKeyhole className="text-blue-700"/>ข้อมูลส่วนบุคคลของคุณ</div><p className="mt-2 text-sm text-slate-600">ข้อมูลของคุณอยู่ใน workspace ส่วนตัว และไฟล์เอกสารถูกเก็บใน private storage</p></div><div className="rounded-xl border border-red-200 bg-red-50 p-6"><h2 className="font-bold text-red-800">ลบข้อมูลทั้งหมด</h2><p className="mt-2 text-sm text-red-700">การลบจะนำเอกสารและข้อมูลทั้งหมดใน workspace นี้ออกอย่างถาวร และไม่สามารถกู้คืนได้</p><button className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" disabled={!workspace} onClick={()=>void deleteWorkspace()}><Trash2 size={16}/>ลบ workspace ของฉัน</button>{!workspace&&<p className="mt-3 text-sm text-slate-600">ไม่มี workspace ที่บันทึกข้อมูลอยู่ในขณะนี้</p>}</div></section>}
-
-function Documents({docs,reload,notice,go}:{docs:Doc[];reload:()=>Promise<void>;notice:(x:string)=>void;go:(v:View,t?:Tab)=>void}){const [busy,setBusy]=useState<string|null>(null);const cards=[{type:"curriculum_summary",title:"สรุปโครงสร้างหลักสูตร",desc:"ผังหมวดและยอดหน่วยกิต",tab:"curriculum" as Tab},{type:"course_catalog",title:"คำอธิบายรายวิชา",desc:"รหัส ชื่อ และหน่วยกิตรายวิชา",tab:"curriculum" as Tab},{type:"transcript",title:"ผลการเรียน",desc:"รายวิชา หน่วยกิต และเกรด",tab:"student" as Tab}];const upload=async(type:any,file?:File)=>{if(!file)return;setBusy(type);try{const p=await api("/api/documents","POST",{type,fileName:file.name,mimeType:file.type,size:file.size});const put=await fetch(p.signedUrl,{method:"PUT",headers:{"content-type":p.mimeType||file.type},body:file});if(!put.ok)throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");const o=await extractLocally(file);const draft=type==="curriculum_summary"?parseKuCpe2565Summary(o.text):type==="course_catalog"?{profile:"ku-cpe-2565",nodes:[],catalog:parseKuCpe2565Catalog(o.text),assignments:{}}:undefined;await api(`/api/documents/${p.documentId}/extraction`,`POST`,{rawExtractionJson:{text:o.text,courses:type==="transcript"?o.courses:[],curriculumDraft:draft},confidence:o.confidence,status:"review_needed"});await reload();notice("อ่านเอกสารแล้ว — โปรดตรวจสอบและบันทึกข้อมูล")}catch(e){notice(e instanceof Error?e.message:"อัปโหลดไม่สำเร็จ")}finally{setBusy(null)}};return <><p className="mb-5 text-sm text-slate-600">อัปโหลด PDF, JPG หรือ PNG ไม่เกิน 10 MB ไฟล์ใหม่จะแทนที่ไฟล์เดิมในประเภทเดียวกัน</p><div className="grid gap-5 md:grid-cols-3">{cards.map(c=>{const d=docs.find(x=>x.type===c.type);return <section className="card flex min-h-64 flex-col p-5" key={c.type}><Upload className="text-blue-600"/><h2 className="mt-4 font-bold">{c.title}</h2><p className="text-sm text-slate-500">{c.desc}</p><div className="mt-4 rounded bg-slate-50 p-3 text-sm"><b className="block truncate">{d?.file_name||"ยังไม่ได้อัปโหลด"}</b>{d?<><span className={`status mt-2 ${d.status==="ready"?"ok":d.status==="review_needed"?"warn":d.status==="failed"?"danger":"info"}`}>{labels[d.status]||d.status}</span><p className="mt-2 text-xs text-slate-500">อัปเดต {new Date(d.created_at).toLocaleString("th-TH")}</p></>:<p className="mt-2 text-xs text-slate-500">รออัปโหลดเอกสาร</p>}</div><div className="mt-auto pt-4">{d?.status==="review_needed"&&<button className="btn mb-2 w-full" onClick={()=>go("review",c.tab)}>ตรวจสอบ{c.tab==="curriculum"?"หลักสูตร":"ผลการเรียน"}</button>}<label className="btn btn-primary block w-full text-center">{busy===c.type?"กำลังอัปโหลด/อ่าน…":d?"แทนที่ไฟล์":"เลือกไฟล์"}<input className="sr-only" disabled={!!busy} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={e=>void upload(c.type,e.target.files?.[0])}/></label></div></section>})}</div></>}
-
-function Review({tab,setTab,docs,courses,requirements,workspace,reload,notice}:{tab:Tab;setTab:(x:Tab)=>void;docs:Doc[];courses:Course[];requirements:Requirement[];workspace:boolean;reload:()=>Promise<void>;notice:(x:string)=>void}){return <><div className="mb-5 border-b" role="tablist"><button role="tab" aria-selected={tab==="curriculum"} className={`review-tab ${tab==="curriculum"?"selected":""}`} onClick={()=>setTab("curriculum")}>หลักสูตร</button><button role="tab" aria-selected={tab==="student"} className={`review-tab ${tab==="student"?"selected":""}`} onClick={()=>setTab("student")}>ข้อมูลส่วนตัวผู้ใช้</button></div>{tab==="student"?<Student docs={docs} courses={courses} workspace={workspace} reload={reload} notice={notice}/>:<Curriculum docs={docs} requirements={requirements} workspace={workspace} reload={reload} notice={notice}/>}</>}
-
-function Student({docs,courses,workspace,reload,notice}:{docs:Doc[];courses:Course[];workspace:boolean;reload:()=>Promise<void>;notice:(x:string)=>void}){const [rows,setRows]=useState<Course[]>(courses),[documentId,setDocumentId]=useState<string|null>(null),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);useEffect(()=>setRows(courses),[courses]);useEffect(()=>{const transcript=docs.find(d=>d.type==="transcript"&&d.status==="review_needed");if(!transcript)return;void api(`/api/documents/${transcript.id}/extraction`).then(result=>{const extracted=result.data?.raw_extraction_json?.courses||[];if(extracted.length){setDocumentId(transcript.id);setRows(extracted.map((r:any,i:number)=>({id:`new-${i}`,code:r.code||"",nameTh:r.name||"",credits:Number(r.credits)||3,grade:r.grade||undefined})));setDirty(true)}}).catch(()=>setError("ไม่สามารถโหลดผลการอ่านเอกสารได้"));},[docs]);const change=(i:number,k:keyof Course,v:any)=>{setDirty(true);setRows(x=>x.map((r,n)=>n===i?{...r,[k]:v}:r))};const save=async()=>{if(rows.some(r=>!r.code||!r.nameTh||Number(r.credits)<=0)){setError("กรุณากรอกรหัส ชื่อ และหน่วยกิตให้ครบ");return}setBusy(true);try{if(documentId){await api(`/api/documents/${documentId}/extraction`,`PUT`,{courses:rows.map(r=>({code:r.code,name:r.nameTh,credits:Number(r.credits),grade:r.grade||undefined}))})}else{const current=new Set(rows.filter(r=>!r.id.startsWith("new-")).map(r=>r.id));await Promise.all([...rows.map(r=>r.id.startsWith("new-")?api("/api/courses","POST",payload(r)):api(`/api/courses/${r.id}`,"PATCH",payload(r))),...courses.filter(r=>!current.has(r.id)).map(r=>api(`/api/courses/${r.id}`,"DELETE"))])}setDirty(false);await reload();notice("บันทึกผลการเรียนแล้ว")}catch(e){setError(e instanceof Error?e.message:"บันทึกไม่สำเร็จ")}finally{setBusy(false)}};return <section data-dirty={dirty||undefined} className="space-y-5"><div className="card p-5"><h2 className="font-bold">ผลการเรียน</h2><p className="text-sm text-slate-600">ตรวจข้อมูลจาก transcript และแก้ไขรหัส ชื่อ เกรด หน่วยกิต เพิ่ม หรือลบรายวิชาได้</p>{documentId&&<p className="mt-2 text-sm text-amber-700">กำลังแสดงผลที่อ่านจากเอกสาร — ตรวจแก้แล้วกดบันทึกเพื่อยืนยัน</p>}{error&&<p className="mt-3 text-sm text-red-700" role="alert">{error}</p>}</div><section className="card overflow-x-auto"><div className="flex justify-between p-5"><h3 className="font-bold">{documentId?"ผลการอ่านจาก Transcript":"รายวิชา"}</h3><button className="btn" onClick={()=>{setDirty(true);setRows(x=>[...x,{id:`new-${crypto.randomUUID()}`,code:"",nameTh:"",credits:3}])}}><Plus size={16}/> เพิ่มรายวิชา</button></div><table className="w-full min-w-[680px] text-sm"><thead className="border-y bg-blue-50"><tr><th className="p-3 text-left">รหัส</th><th className="text-left">ชื่อ</th><th>หน่วยกิต</th><th>เกรด</th><th/></tr></thead><tbody>{rows.map((r,i)=><tr className="border-b" key={r.id}><td className="p-3"><input aria-label="รหัสวิชา" className="w-24 border-b" value={r.code} onChange={e=>change(i,"code",e.target.value)}/></td><td><input aria-label="ชื่อวิชา" className="w-full border-b" value={r.nameTh} onChange={e=>change(i,"nameTh",e.target.value)}/></td><td><input aria-label="หน่วยกิต" className="w-16 border-b" type="number" min=".5" step=".5" value={r.credits} onChange={e=>change(i,"credits",Number(e.target.value))}/></td><td><select aria-label="เกรด" value={r.grade||""} onChange={e=>change(i,"grade",e.target.value||undefined)}>{["",...grades].map(g=><option key={g}>{g}</option>)}</select></td><td><button className="text-red-600" aria-label="ลบรายวิชา" onClick={()=>{setDirty(true);setRows(x=>x.filter((_,n)=>n!==i))}}>ลบ</button></td></tr>)}</tbody></table></section><div className="flex justify-end"><button className="btn btn-primary" disabled={!workspace||!dirty||busy} onClick={()=>void save()}>{busy?"กำลังบันทึก…":"บันทึกการเปลี่ยนแปลง"}</button></div></section>}
-
-function Curriculum({docs,workspace,reload,notice}:{docs:Doc[];requirements:Requirement[];workspace:boolean;reload:()=>Promise<void>;notice:(x:string)=>void}){
- const [ids,setIds]=useState<{summary:string;catalog:string}|null>(null),[nodes,setNodes]=useState<CurriculumNode[]>([]),[catalog,setCatalog]=useState<CatalogCourse[]>([]),[assignments,setAssignments]=useState<Record<string,string>>({}),[dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
- useEffect(()=>{const summary=docs.find(d=>d.type==="curriculum_summary"),courseCatalog=docs.find(d=>d.type==="course_catalog");if(!summary||!courseCatalog)return;void Promise.all([api(`/api/documents/${summary.id}/extraction`),api(`/api/documents/${courseCatalog.id}/extraction`)]).then(([s,c])=>{const saved=s.data?.raw_extraction_json?.curriculumDraft||c.data?.raw_extraction_json?.curriculumDraft;const parsed=parseKuCpe2565Summary(s.data?.raw_extraction_json?.text||"");setIds({summary:summary.id,catalog:courseCatalog.id});setNodes(saved?.nodes||parsed?.nodes||[]);setCatalog(saved?.catalog||c.data?.raw_extraction_json?.curriculumDraft?.catalog||parseKuCpe2565Catalog(c.data?.raw_extraction_json?.text||""));setAssignments(saved?.assignments||{});if(!(saved?.nodes||parsed?.nodes||[]).length)setError("ไม่พบโครงสร้างหลักสูตรจากไฟล์สรุป");}).catch(()=>setError("ไม่สามารถโหลดผลอ่านเอกสารหลักสูตรได้"));},[docs]);
- const buckets=nodes.filter(node=>node.kind==="required_bucket"); const visibleNodes=nodes.filter(node=>node.kind!=="container");
- const updateNode=(id:string,key:"name"|"minimumCredits",value:string|number)=>{setDirty(true);setNodes(all=>all.map(node=>node.id===id?{...node,[key]:value}:node));};
- const updateCourse=(index:number,key:"code"|"nameEn"|"credits",value:string|number)=>{setDirty(true);setCatalog(all=>all.map((course,i)=>i===index?{...course,[key]:value}:course));};
- async function save(){const issue=validateCurriculumDraft(nodes,catalog,assignments);if(issue){setError(issue);return}if(!ids)return;setBusy(true);setError(null);try{await api("/api/curriculum/draft","POST",{summaryDocumentId:ids.summary,catalogDocumentId:ids.catalog,nodes,catalog,assignments});setDirty(false);await reload();notice("ยืนยันโครงสร้างและรายวิชาของหลักสูตรแล้ว");}catch(e){setError(e instanceof Error?e.message:"บันทึกหลักสูตรไม่สำเร็จ")}finally{setBusy(false)}}
- if(!docs.some(d=>d.type==="curriculum_summary")||!docs.some(d=>d.type==="course_catalog"))return <section className="card p-6"><h2 className="font-bold">ยังตรวจหลักสูตรไม่ได้</h2><p className="mt-2 text-sm text-slate-600">กรุณาอัปโหลดทั้ง “สรุปโครงสร้างหลักสูตร” และ “คำอธิบายรายวิชา” ก่อน</p></section>;
- return <section className="space-y-5" data-dirty={dirty||undefined}><section className="card p-5"><h2 className="font-bold">ตรวจหลักสูตรจากเอกสาร 2 ไฟล์</h2><p className="mt-1 text-sm text-slate-600">ตรวจทีละส่วน แล้วระบบจะใช้ข้อมูลที่ยืนยันเพื่อเทียบกับผลการเรียนในขั้นตอนจับคู่รายวิชา</p><ol className="mt-4 grid gap-3 text-sm sm:grid-cols-3"><li className="rounded-lg border border-blue-100 bg-blue-50 p-3"><b>1. โครงสร้างหลักสูตร</b><br/>ตรวจหมวดและจำนวนหน่วยกิตที่ต้องเรียน</li><li className="rounded-lg border border-blue-100 bg-blue-50 p-3"><b>2. รายวิชาในหลักสูตร</b><br/>ตรวจรหัส ชื่อ และหน่วยกิตของแต่ละวิชา</li><li className="rounded-lg border border-blue-100 bg-blue-50 p-3"><b>3. ผูกวิชาบังคับ</b><br/>เลือกหมวดให้วิชาบังคับ ก่อนกดยืนยัน</li></ol>{error&&<p className="mt-4 text-sm text-red-700" role="alert">{error}</p>}</section><section className="card overflow-x-auto"><div className="p-5"><h3 className="font-bold">1. โครงสร้างหลักสูตร</h3><p className="mt-1 text-sm text-slate-500">ข้อมูลจากไฟล์ “สรุปโครงสร้างหลักสูตร” — ตารางนี้ไม่มีรหัสหรือชื่อรายวิชา</p></div><table className="w-full min-w-[560px] text-sm"><thead className="border-y bg-blue-50"><tr><th className="p-3 text-left">หมวดหลักสูตร</th><th>ลักษณะหมวด</th><th>หน่วยกิตที่ต้องเรียน</th></tr></thead><tbody>{visibleNodes.map(node=><tr className="border-b" key={node.id}><td className="p-3"><input aria-label="ชื่อหมวด" className="w-full border-b" value={node.name} onChange={e=>updateNode(node.id,"name",e.target.value)}/></td><td>{node.kind==="total"?"หน่วยกิตรวม":node.kind==="required_bucket"?"วิชาบังคับ":"วิชาเลือก"}</td><td><input aria-label="หน่วยกิตที่ต้องเรียน" className="w-20 border-b" type="number" min="0" step=".5" value={node.minimumCredits} onChange={e=>updateNode(node.id,"minimumCredits",Number(e.target.value))}/></td></tr>)}</tbody></table></section><section className="card overflow-x-auto"><div className="p-5"><h3 className="font-bold">2. รายวิชาในหลักสูตร</h3><p className="mt-1 text-sm text-slate-500">ข้อมูลจากไฟล์ “คำอธิบายรายวิชา” — เลือกหมวดเฉพาะวิชาบังคับ; วิชาเลือกปล่อยเป็น “ไม่ใช่วิชาบังคับ” ได้</p></div><table className="w-full min-w-[700px] text-sm"><thead className="border-y bg-blue-50"><tr><th className="p-3 text-left">รหัสวิชา</th><th className="text-left">ชื่อรายวิชา</th><th>หน่วยกิต</th><th>อยู่ในหมวดวิชาบังคับ</th></tr></thead><tbody>{catalog.map((course,index)=><tr className="border-b" key={`${course.code}-${index}`}><td className="p-3"><input aria-label="รหัสวิชา" className="w-24 border-b" value={course.code} onChange={e=>updateCourse(index,"code",e.target.value)}/></td><td><input aria-label="ชื่อรายวิชา" className="w-full border-b" value={course.nameEn||""} onChange={e=>updateCourse(index,"nameEn",e.target.value)}/></td><td><input aria-label="หน่วยกิตวิชา" className="w-16 border-b" type="number" min=".5" step=".5" value={course.credits||""} onChange={e=>updateCourse(index,"credits",Number(e.target.value))}/></td><td><select aria-label="หมวดวิชาบังคับ" value={assignments[course.code]||""} onChange={e=>{setDirty(true);setAssignments(value=>({...value,[course.code]:e.target.value}))}}><option value="">ไม่ใช่วิชาบังคับ / ยังไม่เลือก</option>{buckets.map(bucket=><option key={bucket.id} value={bucket.id}>{bucket.name}</option>)}</select></td></tr>)}</tbody></table></section><div className="flex items-center justify-between gap-4"><p className="text-sm text-slate-500">ก่อนบันทึก วิชาบังคับที่เลือกในแต่ละหมวดต้องรวมหน่วยกิตครบตามโครงสร้าง</p><button className="btn btn-primary shrink-0" disabled={!workspace||!dirty||busy} onClick={()=>void save()}>{busy?"กำลังบันทึก…":"ยืนยันข้อมูลหลักสูตร"}</button></div></section>}
+export function GradTrackApp({
+  initialView = "overview",
+  locale,
+}: {
+  initialView?: View;
+  locale: string;
+}) {
+  const [view, setView] = useState<View>(initialView);
+  const [tab, setTab] = useState<Tab>(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(location.search).get("tab") === "student"
+      ? "student"
+      : "curriculum",
+  );
+  const [docs, setDocs] = useState<Doc[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [workspace, setWorkspace] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = async () => {
+    try {
+      const currentWorkspace = await api("/api/workspace", "POST");
+      if (currentWorkspace.demo) return;
+      setWorkspace(true);
+      const [documents, dashboard] = await Promise.all([
+        api("/api/documents"),
+        api("/api/dashboard"),
+      ]);
+      setDocs(documents.data);
+      setCourses(dashboard.courses.map(fromCourse));
+      setRequirements(dashboard.requirements.map(fromRequirement));
+    } catch {
+      setNotice("โหมดตัวอย่าง — ตั้งค่า Supabase เพื่อบันทึกข้อมูลจริง");
+    }
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const go = (nextView: View, nextTab?: Tab) => {
+    if (
+      view === "review" &&
+      nextView !== "review" &&
+      document.querySelector("[data-dirty='true']") &&
+      !confirm("มีการเปลี่ยนแปลงที่ยังไม่บันทึก ต้องการออกหรือไม่?")
+    )
+      return;
+    const activeTab = nextTab || tab;
+    setView(nextView);
+    if (nextTab) setTab(nextTab);
+    history.replaceState(
+      null,
+      "",
+      `/${locale}/${nextView === "overview" ? "" : nextView}${nextView === "review" ? `?tab=${activeTab}` : ""}`,
+    );
+  };
+  const deleteWorkspace = async () => {
+    if (
+      !confirm("ลบข้อมูลและไฟล์ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้")
+    )
+      return;
+    try {
+      await api("/api/workspace", "DELETE");
+      setWorkspace(false);
+      setDocs([]);
+      setCourses([]);
+      setRequirements([]);
+      setView("overview");
+      history.replaceState(null, "", `/${locale}/`);
+      setNotice("ลบ workspace แล้ว");
+    } catch {
+      setNotice("ลบ workspace ไม่สำเร็จ");
+    }
+  };
+  return (
+    <div className="min-h-screen lg:grid lg:grid-cols-[250px_1fr]">
+      <aside className="border-b border-blue-100 bg-white p-5 lg:min-h-screen lg:border-r">
+        <Link
+          href={`/${locale}`}
+          className="flex gap-2 text-2xl font-bold text-blue-900"
+        >
+          <GraduationCap />
+          GradTrack
+        </Link>
+        <nav className="mt-7 grid gap-1">
+          {navigationItems.map(([key, title, Icon]) => (
+            <button
+              key={key}
+              className={`nav-item text-left ${view === key ? "active" : ""}`}
+              onClick={() => go(key)}
+            >
+              <Icon size={18} />
+              {title}
+            </button>
+          ))}
+        </nav>
+      </aside>
+      <main className="min-w-0 p-4 sm:p-7">
+        <h1 className="mb-2 text-2xl font-bold">
+          {view === "upload"
+            ? "เอกสารของฉัน"
+            : view === "review"
+              ? "ตรวจสอบข้อมูล"
+              : view === "privacy"
+                ? "ความเป็นส่วนตัว"
+                : "GradTrack"}
+        </h1>
+        {notice && (
+          <p
+            className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm"
+            role="status"
+          >
+            {notice}
+          </p>
+        )}
+        {view === "overview" && (
+          <section className="card p-6">
+            <h2 className="font-bold">เริ่มต้นด้วยการอัปโหลดเอกสาร</h2>
+            <button
+              className="btn btn-primary mt-4"
+              onClick={() => go("upload")}
+            >
+              ไปหน้าเอกสารของฉัน
+            </button>
+          </section>
+        )}
+        {view === "upload" && (
+          <DocumentsPage docs={docs} reload={load} notice={setNotice} go={go} />
+        )}
+        {view === "review" && (
+          <ReviewPage
+            tab={tab}
+            setTab={(nextTab) => go("review", nextTab)}
+            docs={docs}
+            courses={courses}
+            requirements={requirements}
+            workspace={workspace}
+            reload={load}
+            notice={setNotice}
+          />
+        )}
+        {view === "matching" && (
+          <section className="card p-6">
+            <h2 className="font-bold">จับคู่รายวิชา</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              ตรวจหลักสูตรและผลการเรียนจากหน้าตรวจสอบข้อมูลก่อน
+              แล้วจึงจับคู่รายวิชาที่นี่
+            </p>
+          </section>
+        )}
+        {view === "privacy" && (
+          <PrivacyPage
+            deleteWorkspace={deleteWorkspace}
+            workspace={workspace}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
