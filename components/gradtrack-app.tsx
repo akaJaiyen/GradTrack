@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FileText,
   GraduationCap,
@@ -49,11 +49,11 @@ export function GradTrackApp({
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [workspace, setWorkspace] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const workspaceInitialized = useRef(false);
   const load = async () => {
     try {
       const currentWorkspace = await api("/api/workspace", "POST");
       if (currentWorkspace.demo) return;
-      setWorkspace(true);
       const [documents, dashboard] = await Promise.all([
         api("/api/documents"),
         api("/api/dashboard"),
@@ -61,11 +61,16 @@ export function GradTrackApp({
       setDocs(documents.data);
       setCourses(dashboard.courses.map(fromCourse));
       setRequirements(dashboard.requirements.map(fromRequirement));
+      setWorkspace(true);
     } catch {
       setNotice("โหมดตัวอย่าง — ตั้งค่า Supabase เพื่อบันทึกข้อมูลจริง");
     }
   };
   useEffect(() => {
+    // React Strict Mode invokes effects twice in development.  Creating two
+    // anonymous workspaces races their cookies and causes intermittent 401s.
+    if (workspaceInitialized.current) return;
+    workspaceInitialized.current = true;
     void load();
   }, []);
   const go = (nextView: View, nextTab?: Tab) => {
@@ -156,19 +161,10 @@ export function GradTrackApp({
           </section>
         )}
         {view === "upload" && (
-          <DocumentsPage docs={docs} reload={load} notice={setNotice} go={go} />
+          workspace ? <DocumentsPage docs={docs} reload={load} notice={setNotice} go={go} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
         )}
         {view === "review" && (
-          <ReviewPage
-            tab={tab}
-            setTab={(nextTab) => go("review", nextTab)}
-            docs={docs}
-            courses={courses}
-            requirements={requirements}
-            workspace={workspace}
-            reload={load}
-            notice={setNotice}
-          />
+          <ReviewPage />
         )}
         {view === "matching" && (
           <section className="card p-6">

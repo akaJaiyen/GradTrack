@@ -1,12 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Upload } from "lucide-react";
-import { extractLocally } from "@/lib/client-ocr";
-import {
-  parseKuCpe2565Catalog,
-  parseKuCpe2565Summary,
-} from "@/lib/curriculum-profile";
 import {
   api,
   documentStatusLabels,
@@ -14,27 +9,6 @@ import {
   type Tab,
   type View,
 } from "./shared";
-
-const documentCards = [
-  {
-    type: "curriculum_summary",
-    title: "สรุปโครงสร้างหลักสูตร",
-    desc: "ผังหมวดและยอดหน่วยกิต",
-    tab: "curriculum" as Tab,
-  },
-  {
-    type: "course_catalog",
-    title: "คำอธิบายรายวิชา",
-    desc: "รหัส ชื่อ และหน่วยกิตรายวิชา",
-    tab: "curriculum" as Tab,
-  },
-  {
-    type: "transcript",
-    title: "ผลการเรียน",
-    desc: "รายวิชา หน่วยกิต และเกรด",
-    tab: "student" as Tab,
-  },
-];
 
 export function DocumentsPage({
   docs,
@@ -47,120 +21,48 @@ export function DocumentsPage({
   notice: (message: string) => void;
   go: (view: View, tab?: Tab) => void;
 }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const upload = async (type: string, file?: File) => {
-    if (!file) return;
-    setBusy(type);
+  const [busy, setBusy] = useState(false);
+  const [consent, setConsent] = useState(false);
+  useEffect(() => {
+    void api("/api/academic-profile").then(result => setConsent(Boolean(result.data?.consented_at))).catch(() => undefined);
+  }, []);
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
     try {
-      const prepared = await api("/api/documents", "POST", {
-        type,
-        fileName: file.name,
-        mimeType: file.type,
-        size: file.size,
-      });
-      const put = await fetch(prepared.signedUrl, {
-        method: "PUT",
-        headers: { "content-type": prepared.mimeType || file.type },
-        body: file,
-      });
-      if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
-      const extraction = await extractLocally(file);
-      const curriculumDraft =
-        type === "curriculum_summary"
-          ? parseKuCpe2565Summary(extraction.text)
-          : type === "course_catalog"
-            ? {
-                profile: "ku-cpe-2565",
-                nodes: [],
-                catalog: parseKuCpe2565Catalog(extraction.text),
-                assignments: {},
-              }
-            : undefined;
-      await api(`/api/documents/${prepared.documentId}/extraction`, "POST", {
-        rawExtractionJson: {
-          text: extraction.text,
-          courses: type === "transcript" ? extraction.courses : [],
-          curriculumDraft,
-        },
-        confidence: extraction.confidence,
-        status: "review_needed",
-      });
+      const uploaded = await Promise.all([...files].map(async file => {
+        const prepared = await api("/api/documents", "POST", { type: "academic_source", fileName: file.name, mimeType: file.type, size: file.size });
+        const put = await fetch(prepared.signedUrl, { method: "PUT", headers: { "content-type": prepared.mimeType || file.type }, body: file });
+        if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
+        return prepared.documentId as string;
+      }));
+      await api("/api/academic-profile", "POST", { documentIds: uploaded, consent });
       await reload();
-      notice("อ่านเอกสารแล้ว — โปรดตรวจสอบและบันทึกข้อมูล");
+      notice("AI อ่านและรวมเอกสารแล้ว — ตรวจผลลัพธ์ได้จากหน้าตรวจสอบข้อมูล");
+      go("review");
     } catch (error) {
       notice(error instanceof Error ? error.message : "อัปโหลดไม่สำเร็จ");
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
   return (
     <>
-      <p className="mb-5 text-sm text-slate-600">
-        อัปโหลด PDF, JPG หรือ PNG ไม่เกิน 10 MB
-        ไฟล์ใหม่จะแทนที่ไฟล์เดิมในประเภทเดียวกัน
-      </p>
-      <div className="grid gap-5 md:grid-cols-3">
-        {documentCards.map((card) => {
-          const document = docs.find((item) => item.type === card.type);
-          return (
-            <section
-              className="card flex min-h-64 flex-col p-5"
-              key={card.type}
-            >
-              <Upload className="text-blue-600" />
-              <h2 className="mt-4 font-bold">{card.title}</h2>
-              <p className="text-sm text-slate-500">{card.desc}</p>
-              <div className="mt-4 rounded bg-slate-50 p-3 text-sm">
-                <b className="block truncate">
-                  {document?.file_name || "ยังไม่ได้อัปโหลด"}
-                </b>
-                {document ? (
-                  <>
-                    <span
-                      className={`status mt-2 ${document.status === "ready" ? "ok" : document.status === "review_needed" ? "warn" : document.status === "failed" ? "danger" : "info"}`}
-                    >
-                      {documentStatusLabels[document.status] || document.status}
-                    </span>
-                    <p className="mt-2 text-xs text-slate-500">
-                      อัปเดต{" "}
-                      {new Date(document.created_at).toLocaleString("th-TH")}
-                    </p>
-                  </>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-500">รออัปโหลดเอกสาร</p>
-                )}
-              </div>
-              <div className="mt-auto pt-4">
-                {document?.status === "review_needed" && (
-                  <button
-                    className="btn mb-2 w-full"
-                    onClick={() => go("review", card.tab)}
-                  >
-                    ตรวจสอบ
-                    {card.tab === "curriculum" ? "หลักสูตร" : "ผลการเรียน"}
-                  </button>
-                )}
-                <label className="btn btn-primary block w-full text-center">
-                  {busy === card.type
-                    ? "กำลังอัปโหลด/อ่าน…"
-                    : document
-                      ? "แทนที่ไฟล์"
-                      : "เลือกไฟล์"}
-                  <input
-                    className="sr-only"
-                    disabled={!!busy}
-                    type="file"
-                    accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                    onChange={(event) =>
-                      void upload(card.type, event.target.files?.[0])
-                    }
-                  />
-                </label>
-              </div>
-            </section>
-          );
-        })}
-      </div>
+      <section className="card p-6">
+        <Upload className="text-blue-600" />
+        <h2 className="mt-4 font-bold">อัปโหลดเอกสารการศึกษาของคุณ</h2>
+        <p className="mt-2 text-sm text-slate-600">เลือก PDF, JPG หรือ PNG ได้หลายไฟล์พร้อมกัน (ไม่เกิน 10 MB ต่อไฟล์) AI จะระบุชนิดเอกสารและรวมเป็นโปรไฟล์การเรียนชุดเดียว</p>
+        <label className="mt-5 flex gap-3 rounded border border-blue-100 bg-blue-50 p-3 text-sm">
+          <input type="checkbox" checked={consent} onChange={event => setConsent(event.target.checked)} />
+          <span>ฉันยินยอมให้ GradTrack ส่งไฟล์นี้ไปยัง Gemini เพื่ออ่านและสกัดข้อมูลการศึกษา</span>
+        </label>
+        <label className="btn btn-primary mt-5 inline-block text-center">
+          {busy ? "กำลังอัปโหลดและให้ AI อ่าน…" : "เลือกเอกสาร"}
+          <input className="sr-only" disabled={busy || !consent} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" onChange={event => void upload(event.target.files)} />
+        </label>
+        {!consent && <p className="mt-2 text-xs text-slate-500">กรุณายินยอมก่อนเลือกไฟล์</p>}
+      </section>
+      {docs.filter(doc => doc.type === "academic_source").length > 0 && <section className="card mt-5 p-5"><h2 className="font-bold">ไฟล์ล่าสุด</h2><div className="mt-3 grid gap-2">{docs.filter(doc => doc.type === "academic_source").map(doc => <div key={doc.id} className="flex items-center justify-between rounded bg-slate-50 p-3 text-sm"><span className="truncate">{doc.file_name}</span><span className="status info">{documentStatusLabels[doc.status] || doc.status}</span></div>)}</div></section>}
     </>
   );
 }

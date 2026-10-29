@@ -16,7 +16,7 @@ function canonicalMimeType(fileName: string, mimeType: string) {
 }
 
 const input = z.object({
-  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "transcript"]),
+  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "transcript", "academic_source"]),
   fileName: z.string().trim().min(1).max(160),
   mimeType: z.enum(supportedMimeTypes),
   size: z.number().positive().max(maxFileSize),
@@ -35,7 +35,12 @@ export async function POST(request: NextRequest) {
   // One active document per role. Replacing a source must also invalidate only
   // the derived data from that source; user-entered rows are deliberately kept.
   const { data: previous, error: previousError } = await db.from("documents").select("id,file_path").eq("workspace_id", id).eq("type", parsed.data.type);
-  if (previousError) return error("Could not replace previous document", 500);
+  if (previousError) return error(
+    parsed.data.type === "academic_source"
+      ? "Academic-profile database migration is required. Apply 0003_academic_profiles.sql in Supabase first."
+      : "Could not replace previous document",
+    parsed.data.type === "academic_source" ? 503 : 500,
+  );
   if (parsed.data.type === "transcript") {
     const { error: clearError } = await db.from("courses").delete().eq("workspace_id", id).eq("source", "transcript");
     if (clearError) return error("Could not clear previous transcript data", 500);
