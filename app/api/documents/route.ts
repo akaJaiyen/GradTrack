@@ -32,6 +32,24 @@ export async function POST(request: NextRequest) {
     return error(message);
   }
   const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401);
+  // One active document per role. Replacing a source must also invalidate only
+  // the derived data from that source; user-entered rows are deliberately kept.
+  const { data: previous, error: previousError } = await db.from("documents").select("id,file_path").eq("workspace_id", id).eq("type", parsed.data.type);
+  if (previousError) return error("Could not replace previous document", 500);
+  if (parsed.data.type === "transcript") {
+    const { error: clearError } = await db.from("courses").delete().eq("workspace_id", id).eq("source", "transcript");
+    if (clearError) return error("Could not clear previous transcript data", 500);
+  }
+  if (parsed.data.type === "curriculum_summary" || parsed.data.type === "course_catalog" || parsed.data.type === "curriculum") {
+    const { error: clearError } = await db.from("degree_requirements").delete().eq("workspace_id", id).eq("source", "curriculum");
+    if (clearError) return error("Could not clear previous curriculum data", 500);
+  }
+  if (previous?.length) {
+    const { error: storageError } = await db.storage.from("private-documents").remove(previous.map(item => item.file_path));
+    if (storageError) return error("Could not remove previous document file", 500);
+    const { error: deleteError } = await db.from("documents").delete().in("id", previous.map(item => item.id));
+    if (deleteError) return error("Could not remove previous document", 500);
+  }
   const documentId = crypto.randomUUID(), safeName = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_"); const path = `${id}/${documentId}/${safeName}`;
   const { data: signed, error: signError } = await db.storage.from("private-documents").createSignedUploadUrl(path); if (signError) return error("Could not prepare upload", 500);
   const { error: insertError } = await db.from("documents").insert({ id: documentId, workspace_id: id, type: parsed.data.type, file_path: path, file_name: parsed.data.fileName, mime_type: parsed.data.mimeType, status: "uploaded" });

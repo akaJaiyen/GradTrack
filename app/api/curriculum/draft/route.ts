@@ -39,8 +39,22 @@ export async function POST(request: NextRequest) {
       return group?.kind === "required_bucket" && item ? [{ workspace_id: workspaceId, category_name: group.name, requirement_type: "required_course", required_course_code: item.code, required_course_name: item.nameEn || null, minimum_credits: item.credits, prerequisite_data: [], source: "curriculum", verified_by_user: true }] : [];
     }),
   ];
+  // Re-saving the same two source documents replaces their generated
+  // requirements while retaining user-created (manual) requirements.
+  const { error: removeError } = await db.from("degree_requirements").delete().eq("workspace_id", workspaceId).eq("source", "curriculum");
+  if (removeError) return error("Could not replace curriculum requirements", 500);
   const { error: insertError } = await db.from("degree_requirements").insert(rows);
   if (insertError) return error("Could not save curriculum requirements", 500);
+  const [{ data: summaryExtraction }, { data: catalogExtraction }] = await Promise.all([
+    db.from("document_extractions").select("raw_extraction_json,confidence").eq("document_id", summary.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("document_extractions").select("raw_extraction_json,confidence").eq("document_id", catalogDocument.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  const draft = { profile: "ku-cpe-2565", nodes: parsed.data.nodes, catalog: parsed.data.catalog, assignments: parsed.data.assignments };
+  const { error: extractionError } = await db.from("document_extractions").insert([
+    { document_id: summary.id, raw_extraction_json: { ...(summaryExtraction?.raw_extraction_json || {}), curriculumDraft: draft }, confidence: summaryExtraction?.confidence ?? 0, extraction_version: "curriculum-draft-v2" },
+    { document_id: catalogDocument.id, raw_extraction_json: { ...(catalogExtraction?.raw_extraction_json || {}), curriculumDraft: draft }, confidence: catalogExtraction?.confidence ?? 0, extraction_version: "curriculum-draft-v2" },
+  ]);
+  if (extractionError) return error("Could not save curriculum draft", 500);
   await db.from("documents").update({ status: "ready" }).in("id", [summary.id, catalogDocument.id]);
   return NextResponse.json({ inserted: rows.length });
 }
