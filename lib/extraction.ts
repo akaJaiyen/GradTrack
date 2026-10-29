@@ -20,6 +20,12 @@ export const extractionSchema = z.object({
     minimumCredits: z.number().nonnegative().max(999).optional(),
     confidence: z.record(z.string(), z.number().min(0).max(1)).default({}),
   })).max(500).default([]),
+  curriculumDraft: z.object({
+    profile: z.literal("ku-cpe-2565"),
+    nodes: z.array(z.object({ id: z.string(), parentId: z.string().optional(), name: z.string(), minimumCredits: z.number().nonnegative(), kind: z.enum(["total", "container", "required_bucket", "elective_bucket"]), evidence: z.string() })).max(100),
+    catalog: z.array(z.object({ code: z.string(), nameEn: z.string().optional(), credits: z.number().positive().optional(), confidence: z.number().min(0).max(1) })).max(500),
+    assignments: z.record(z.string(), z.string()),
+  }).optional(),
 });
 export type Extraction = z.infer<typeof extractionSchema>;
 

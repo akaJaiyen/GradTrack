@@ -9,7 +9,9 @@ export function joinPdfTextItems(items: unknown[]) {
     const value = String((item as { str: string }).str).trim();
     if (!value) continue;
     const previous = text.at(-1);
-    if (previous && /^\d+$/.test(previous) && /^\d+$/.test(value)) text[text.length - 1] += value;
+    // Join only short fragments such as `1`, `5` -> `15`; never attach a
+    // one-credit value to the next eight-digit course code.
+    if (previous && /^\d+$/.test(previous) && /^\d+$/.test(value) && previous.length + value.length <= 3) text[text.length - 1] += value;
     else text.push(value);
   }
   return text.join(" ");

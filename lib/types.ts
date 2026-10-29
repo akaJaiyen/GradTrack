@@ -1,4 +1,4 @@
-export type DocumentType = "curriculum" | "transcript";
+export type DocumentType = "curriculum" | "curriculum_summary" | "course_catalog" | "transcript";
 export type DocumentStatus = "uploaded" | "extracting" | "review_needed" | "ready" | "failed";
 export type Grade = "A" | "B+" | "B" | "C+" | "C" | "D+" | "D" | "F" | "P" | "S" | "W" | "I" | "N";
 export type Course = { id: string; code: string; nameTh: string; nameEn?: string; credits: number; grade?: Grade; term?: string; year?: number; verified?: boolean };

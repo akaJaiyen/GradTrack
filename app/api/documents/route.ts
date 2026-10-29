@@ -16,7 +16,7 @@ function canonicalMimeType(fileName: string, mimeType: string) {
 }
 
 const input = z.object({
-  type: z.enum(["curriculum", "transcript"]),
+  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "transcript"]),
   fileName: z.string().trim().min(1).max(160),
   mimeType: z.enum(supportedMimeTypes),
   size: z.number().positive().max(maxFileSize),
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
   const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401);
   const documentId = crypto.randomUUID(), safeName = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_"); const path = `${id}/${documentId}/${safeName}`;
   const { data: signed, error: signError } = await db.storage.from("private-documents").createSignedUploadUrl(path); if (signError) return error("Could not prepare upload", 500);
-  const { error: insertError } = await db.from("documents").insert({ id: documentId, workspace_id: id, type: parsed.data.type, file_path: path, file_name: parsed.data.fileName, mime_type: parsed.data.mimeType, status: "uploaded" }); if (insertError) return error("Could not save document", 500);
-  return NextResponse.json({ documentId, signedUrl: signed.signedUrl, mimeType: parsed.data.mimeType });
+  const { error: insertError } = await db.from("documents").insert({ id: documentId, workspace_id: id, type: parsed.data.type, file_path: path, file_name: parsed.data.fileName, mime_type: parsed.data.mimeType, status: "uploaded" });
+  if (insertError) return error(insertError.message.includes("document_type") ? "Database migration 0002 is required before uploading this document type" : "Could not save document", 500);
+  return NextResponse.json({ documentId, signedUrl: signed.signedUrl, mimeType: parsed.data.mimeType, type: parsed.data.type });
 }
