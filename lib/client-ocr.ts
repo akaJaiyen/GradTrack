@@ -1,6 +1,19 @@
 "use client";
 import { parseTranscript } from "@/lib/parser";
 export type OcrResult = { text: string; confidence: number; courses: ReturnType<typeof parseTranscript> };
+/** PDF.js can expose one printed number as adjacent text items (for example, `1`, `5`). */
+export function joinPdfTextItems(items: unknown[]) {
+  const text: string[] = [];
+  for (const item of items) {
+    if (!("str" in (item as object))) continue;
+    const value = String((item as { str: string }).str).trim();
+    if (!value) continue;
+    const previous = text.at(-1);
+    if (previous && /^\d+$/.test(previous) && /^\d+$/.test(value)) text[text.length - 1] += value;
+    else text.push(value);
+  }
+  return text.join(" ");
+}
 /** Local-first OCR provider. It does not upload document bytes to an OCR vendor. */
 export async function extractLocally(file: File): Promise<OcrResult> {
   if (file.type === "application/pdf") {
@@ -9,7 +22,7 @@ export async function extractLocally(file: File): Promise<OcrResult> {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
     const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     let text = "";
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) text += "\n" + (await (await document.getPage(pageNumber)).getTextContent()).items.map((item: unknown) => "str" in (item as object) ? String((item as { str: string }).str) : "").join(" ");
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) text += "\n" + joinPdfTextItems((await (await document.getPage(pageNumber)).getTextContent()).items);
     return { text, confidence: text.trim() ? .72 : .1, courses: parseTranscript(text) };
   }
   const { createWorker } = await import("tesseract.js");

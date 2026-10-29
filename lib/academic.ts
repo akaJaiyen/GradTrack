@@ -24,8 +24,10 @@ export function similarity(a: string, b: string) {
   const x = grams(left), y = grams(right), intersection = [...x].filter(g => y.has(g)).length;
   return Number((2 * intersection / (x.size + y.size || 1)).toFixed(2));
 }
-export function calculateProgress(courses: Course[], requirements: Requirement[]) {
-  const passed = courses.filter(c => c.grade && passingGrades.has(c.grade));
+export type ConfirmedMatch = { course_id: string; degree_requirement_id: string; status: "confirmed" | "needs_review" };
+export function calculateProgress(courses: Course[], requirements: Requirement[], matches: ConfirmedMatch[] = []) {
+  const confirmedCourseIds = new Set(matches.filter(match => match.status === "confirmed").map(match => match.course_id));
+  const passed = courses.filter(c => confirmedCourseIds.has(c.id) && c.grade && passingGrades.has(c.grade));
   const passedCredits = passed.reduce((sum, c) => sum + c.credits, 0);
   const total = requirements.find(r => r.type === "total_credit")?.minimumCredits ?? 0;
   return { passedCredits, totalCredits: total, percentage: total ? Math.min(100, Math.round(passedCredits / total * 100)) : 0 };

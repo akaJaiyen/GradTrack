@@ -34,3 +34,5 @@ coverage/
 Thumbs.db
 .vscode/
 .idea
+
+.next-check/

@@ -10,11 +10,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ documentId: string }> }) {
   const { documentId } = await params;
-  const body = z.object({ courses: z.array(confirmedCourseSchema).min(1).max(500) }).safeParse(await request.json());
-  if (!body.success) return error("Invalid courses: each row needs code, name, credits, and a valid grade");
+  const body = z.object({ courses: z.array(confirmedCourseSchema).min(1).max(500).optional(), requirements: z.array(z.object({ category: z.string().trim().min(1).max(160), type: z.enum(["required_course", "elective_credit", "total_credit"]), code: z.string().trim().max(40).optional(), name: z.string().trim().max(250).optional(), minimumCredits: z.number().nonnegative().max(999).optional() })).min(1).max(500).optional() }).safeParse(await request.json());
+  if (!body.success || (!body.data.courses && !body.data.requirements)) return error("Invalid confirmed extraction");
   const { db, workspaceId } = await workspaceContext(); if (!db) return unavailable(); if (!workspaceId) return error("Unauthorized", 401);
-  const { data: document } = await db.from("documents").select("id").eq("id", documentId).eq("workspace_id", workspaceId).eq("type", "transcript").maybeSingle();
-  if (!document) return error("Transcript not found", 404);
+  const { data: document } = await db.from("documents").select("id,type").eq("id", documentId).eq("workspace_id", workspaceId).maybeSingle();
+  if (!document) return error("Document not found", 404);
+  if (document.type === "curriculum") {
+    if (!body.data.requirements) return error("Curriculum needs confirmed requirements");
+    const { error: insertError } = await db.from("degree_requirements").insert(body.data.requirements.map(requirement => ({ workspace_id: workspaceId, category_name: requirement.category, requirement_type: requirement.type, required_course_code: requirement.code ? normalizedCourseCode(requirement.code) : null, required_course_name: requirement.name || null, minimum_credits: requirement.minimumCredits ?? null, prerequisite_data: [], source: "curriculum", verified_by_user: true })));
+    if (insertError) return error("Could not confirm requirements", 500);
+    await db.from("documents").update({ status: "ready" }).eq("id", documentId);
+    return NextResponse.json({ inserted: body.data.requirements.length, skipped: 0 });
+  }
+  if (!body.data.courses) return error("Transcript needs confirmed courses");
   const { data: existing, error: existingError } = await db.from("courses").select("code").eq("workspace_id", workspaceId);
   if (existingError) return error("Could not validate existing courses", 500);
   const known = new Set((existing || []).map(row => normalizedCourseCode(row.code)));
