@@ -4,3 +4,7 @@
 @tailwind base; @tailwind components; @tailwind utilities;
 :root { --ink:#102a5f; --blue:#2563eb; --line:#dbeafe; --muted:#64748b; --bg:#f6faff; }
 * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--bg); font-family:"Noto Sans Thai",Arial,sans-serif; } button,input,select { font:inherit; } button { cursor:pointer; } .card { background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 20px rgba(30,58,138,.05); } .btn { border:1px solid #bfdbfe;background:#fff;color:#1e3a8a;border-radius:9px;padding:9px 13px;font-weight:600; } .btn-primary { background:#2563eb;color:#fff;border-color:#2563eb; } .nav-item { display:flex;align-items:center;gap:10px;border-radius:9px;padding:10px 12px;color:#40506c;text-decoration:none;font-size:14px; } .nav-item:hover,.nav-item.active { background:#2563eb;color:#fff; } .status { border-radius:99px;padding:3px 9px;font-size:12px;font-weight:700;display:inline-flex; } .ok { background:#dcfce7;color:#15803d; } .warn { background:#ffedd5;color:#c2410c; } .danger { background:#fee2e2;color:#b91c1c; } .info { background:#dbeafe;color:#1d4ed8; }
+.review-tab { min-height:44px; padding:10px 18px; color:#475569; font-weight:700; border-bottom:3px solid transparent; }
+.review-tab:hover { background:#eff6ff; color:#1d4ed8; }
+.review-tab.selected { color:#1d4ed8; border-bottom-color:#2563eb; background:#eff6ff; }
+.review-tab:focus-visible { outline:3px solid #93c5fd; outline-offset:-3px; }
