@@ -74,7 +74,7 @@ export function summarizeAcademicDocumentProcessing(
       state: "retryable",
       title: hasRateLimit ? "การประมวลผลหยุดชั่วคราว" : "ประมวลผลข้อมูลการเรียนไม่สำเร็จ",
       description: hasRateLimit
-        ? "โควตา Gemini หมดชั่วคราว โปรดลองอีกครั้งหลัง quota รีเซ็ตหรือเปิด billing"
+        ? "Typhoon จำกัดจำนวนคำขอชั่วคราว โปรดลองประมวลผลอีกครั้งภายหลัง"
         : `มีเอกสารบางไฟล์อ่านไม่สำเร็จ โปรดลองประมวลผล ${documentList} อีกครั้ง`,
       canRetry: true,
     };

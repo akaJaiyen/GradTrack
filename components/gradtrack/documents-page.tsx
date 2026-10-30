@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { LoaderCircle, Upload } from "lucide-react";
-import { extractLocally } from "@/lib/client-ocr";
 import { documentExtractionErrorMessage } from "@/lib/document-extraction-error";
 import { summarizeAcademicDocumentProcessing } from "@/lib/document-processing";
 import {
@@ -57,14 +56,6 @@ export function DocumentsPage({
       uploadStored = true;
       setBusyRoles(current => { const next = new Set(current); next.delete(role); return next; });
       setProcessingRoles(current => new Set(current).add(role));
-      const localExtraction = await extractLocally(file).catch(() => null);
-      if (localExtraction) {
-        await api(`/api/documents/${prepared.documentId}/extraction`, "POST", {
-          rawExtractionJson: { text: localExtraction.text, courses: localExtraction.courses },
-          confidence: localExtraction.confidence,
-          status: "uploaded",
-        }).catch(() => undefined);
-      }
       await api("/api/academic-profile", "POST", { consent: true });
       await reload();
       setUploadedDocs({});

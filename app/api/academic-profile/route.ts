@@ -2,12 +2,14 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { error, unavailable } from "@/lib/api";
 import { mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
-import { extractWithGemini, isGeminiRateLimitError } from "@/lib/gemini";
+import { extractTyphoonProfile, isTyphoonRateLimited, renderPdfPages, typhoonOcrPages } from "@/lib/typhoon";
 import { normalizedCourseCode } from "@/lib/extraction";
-import { textForGemini } from "@/lib/local-extraction";
 import { documentExtractionErrorCode, type DocumentExtractionErrorCode, type ExtractionStage } from "@/lib/document-extraction-error";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
+import { hasTyphoonConsent } from "@/lib/consent";
+
+export const runtime = "nodejs";
 
 export async function GET() {
   const { db, workspaceId } = await workspaceContext();
@@ -35,8 +37,9 @@ export async function POST(request: Request) {
   const { db, workspaceId } = await workspaceContext();
   if (!db) return unavailable();
   if (!workspaceId) return error("Unauthorized", 401);
-  const { data: workspace } = await db.from("workspaces").select("consented_at").eq("id", workspaceId).maybeSingle();
-  if (!workspace?.consented_at || !body.data.consent) return error("Consent is required before sending documents to Gemini");
+  const { data: workspace, error: consentQueryError } = await db.from("workspaces").select("consented_at,consent_version").eq("id", workspaceId).maybeSingle();
+  if (consentQueryError) return error("โหลดข้อมูลความยินยอมไม่ได้ กรุณาใช้ migration 0008_typhoon_document_pipeline.sql กับ Supabase ก่อน", 503);
+  if (!hasTyphoonConsent(workspace) || !body.data.consent) return error("กรุณายินยอมการส่งเอกสารให้ Typhoon ก่อนเริ่มอ่านเอกสาร", 403);
   const { data: availableDocuments, error: documentError } = await db.from("documents")
     .select("id,file_path,mime_type,type").eq("workspace_id", workspaceId).in("type", ["study_plan", "transcript", "academic_source"]);
   if (documentError) return error("Could not load uploaded documents", 500);
@@ -48,55 +51,45 @@ export async function POST(request: Request) {
   await db.from("documents").update({ status: "extracting", extraction_error: null }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
   after(async () => {
     let extractionFailedIds: string[] = [];
-    let stage: ExtractionStage = "gemini";
+    let stage: ExtractionStage = "typhoon_ocr";
     try {
-    const { data: storedExtractions } = await db.from("document_extractions")
-      .select("document_id,raw_extraction_json,confidence,created_at")
-      .in("document_id", documents.map(document => document.id))
-      .eq("extraction_version", "client-ocr-v1")
-      .order("created_at", { ascending: false });
-    const localExtractions = new Map<string, { text: string; confidence: number }>();
-    for (const stored of storedExtractions || []) {
-      if (localExtractions.has(stored.document_id)) continue;
-      const payload = stored.raw_extraction_json as { text?: unknown } | null;
-      if (typeof payload?.text === "string") localExtractions.set(stored.document_id, { text: payload.text, confidence: stored.confidence });
-    }
-    type ExtractionSuccess = { document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractWithGemini>> };
+    type ExtractionSuccess = { document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractTyphoonProfile>> };
     type ExtractionFailure = { document: typeof documents[number]; error: Error; errorCode: DocumentExtractionErrorCode };
     const extractionAttempts: Array<ExtractionSuccess | ExtractionFailure> = [];
     for (let index = 0; index < documents.length; index += 1) {
       const document = documents[index];
       if (index > 0) await db.from("documents").update({ status: "extracting" }).eq("id", document.id).eq("workspace_id", workspaceId);
       try {
-        const localText = textForGemini(localExtractions.get(document.id));
-        if (localText) {
-          stage = "gemini";
-          extractionAttempts.push({ document, extraction: await extractWithGemini({ text: localText, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
-        } else {
-          stage = "storage_download";
-          const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
-          if (downloadError || !file) throw new Error("Could not download an uploaded document");
-          stage = "gemini";
-          extractionAttempts.push({ document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
-        }
+        stage = "storage_download";
+        const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
+        if (downloadError || !file) throw new Error("Could not download an uploaded document");
+        stage = "typhoon_ocr";
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const pages = document.mime_type === "application/pdf" ? await renderPdfPages(bytes) : [Buffer.from(bytes).toString("base64")];
+        const markdown = await typhoonOcrPages(pages);
+        const { error: saveOcrError } = await db.from("document_extractions").insert({ document_id: document.id, raw_extraction_json: { text: markdown }, confidence: 0.5, extraction_version: "typhoon-ocr-v1" });
+        if (saveOcrError) throw new Error("Could not save OCR output");
+        stage = "typhoon_text";
+        extractionAttempts.push({ document, extraction: await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
       } catch (caught) {
         const error = caught instanceof Error ? caught : new Error("Could not read uploaded document");
         const errorCode = documentExtractionErrorCode(error, stage);
         console.error("Document extraction failed", { stage, errorCode, httpStatus: "status" in error ? error.status : undefined });
         extractionAttempts.push({ document, error, errorCode });
-        if (isGeminiRateLimitError(error)) break;
+        if (isTyphoonRateLimited(error)) break;
       }
     }
     const failures = extractionAttempts.filter((attempt): attempt is ExtractionFailure => "error" in attempt);
     if (failures.length) {
       extractionFailedIds = failures.map(attempt => attempt.document.id);
-      const rateLimitedIds = failures.filter(attempt => isGeminiRateLimitError(attempt.error)).map(attempt => attempt.document.id);
+      const rateLimitedIds = failures.filter(attempt => isTyphoonRateLimited(attempt.error)).map(attempt => attempt.document.id);
       const failedAttempts = failures.filter(attempt => !rateLimitedIds.includes(attempt.document.id));
-      const failedIds = failedAttempts.map(attempt => attempt.document.id);
+      const attemptedIds = new Set(extractionAttempts.map(attempt => attempt.document.id));
       await Promise.all([
-        rateLimitedIds.length ? db.from("documents").update({ status: "rate_limited", extraction_error: "gemini_rate_limited" }).in("id", rateLimitedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
+        rateLimitedIds.length ? db.from("documents").update({ status: "rate_limited", extraction_error: "typhoon_rate_limited" }).in("id", rateLimitedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
         ...failedAttempts.map(attempt => db.from("documents").update({ status: "failed", extraction_error: attempt.errorCode }).eq("id", attempt.document.id).eq("workspace_id", workspaceId)),
         db.from("documents").update({ status: "uploaded", extraction_error: null }).in("id", extractionAttempts.filter(attempt => !("error" in attempt)).map(attempt => attempt.document.id)).eq("workspace_id", workspaceId),
+        ...documents.filter(document => !attemptedIds.has(document.id)).map(document => db.from("documents").update({ status: "uploaded", extraction_error: null }).eq("id", document.id).eq("workspace_id", workspaceId)),
       ]);
       throw failures[0].error;
     }
@@ -109,7 +102,7 @@ export async function POST(request: Request) {
     stage = "profile_save";
     const { error: profileError } = await db.rpc("replace_academic_profile", {
       p_workspace_id: workspaceId, p_extraction: profile, p_source_document_ids: documents.map(document => document.id), p_status: status,
-      p_consented_at: workspace.consented_at,
+      p_consented_at: workspace?.consented_at ?? null,
       p_courses: profile.completedCourses.map(course => ({ code: normalizedCourseCode(course.code), name_th: course.name, credits: course.credits, grade: course.grade, term: course.term, year: course.academicYear })),
       p_requirements: requirements.map(requirement => ({ category_name: requirement.category, requirement_type: requirement.type, required_course_code: requirement.code, required_course_name: requirement.name, minimum_credits: requirement.minimumCredits })),
     });

@@ -22,7 +22,7 @@ GradTrack คือเว็บติดตามแผนและความ�
 
 - Stack: Next.js 15 App Router, React 19, TypeScript และ Tailwind CSS
 - ฐานข้อมูล/ไฟล์: Supabase และ private bucket ชื่อ `private-documents`
-- AI extraction: Gemini ใช้เฉพาะฝั่งเซิร์ฟเวอร์และต้องได้รับ consent จากผู้ใช้ก่อนส่งข้อมูลเอกสาร โดย consent ครั้งเดียวครอบคลุมข้อความที่สกัดในเครื่องและไฟล์ต้นฉบับที่ส่งเป็น fallback เมื่อคุณภาพข้อความไม่พอ
+- AI extraction: ใช้ Typhoon OCR อ่านไฟล์ต้นฉบับและ Typhoon text model สกัดข้อมูล เฉพาะฝั่งเซิร์ฟเวอร์หลังได้รับ consent เวอร์ชันปัจจุบันจากผู้ใช้
 - UI หลักใช้ภาษาไทย (`<html lang="th">`) และมี routing ตาม locale ใน `app/[locale]`
 - แอปทำงานแบบ demo ได้เมื่อยังไม่ได้ตั้งค่า Supabase
 
@@ -30,8 +30,8 @@ GradTrack คือเว็บติดตามแผนและความ�
 
 - `app/` — หน้าจอและ API routes ของ Next.js
 - `components/` — React UI; หน้าในโดเมนอยู่ที่ `components/gradtrack/`
-- `lib/` — domain logic, parsers, validation, Supabase และ Gemini integration
-- `supabase/migrations/` — schema migrations เรียงตามหมายเลข; migration ล่าสุดปัจจุบันคือ `0004_study_plan_documents.sql`
+- `lib/` — domain logic, parsers, validation, Supabase และ Typhoon integration
+- `supabase/migrations/` — schema migrations เรียงตามหมายเลข; migration ล่าสุดปัจจุบันคือ `0008_typhoon_document_pipeline.sql`
 - `tests/` — Vitest tests ของ logic และ API-adjacent modules
 - `.env.example` — รายการ environment variables ที่อนุญาตให้บันทึกเป็นตัวอย่าง; ห้าม commit `.env.local` หรือ secrets
 
@@ -58,10 +58,9 @@ npm run build    # type-check และ production build
 
 ## ข้อกำหนดด้านข้อมูลและความปลอดภัย
 
-- เอกสารการศึกษาเป็นข้อมูลอ่อนไหว: ส่งไป Gemini เฉพาะจาก server หลังยืนยัน consent แล้วเท่านั้น
-- ให้สกัดข้อความในเครื่องก่อนเมื่อทำได้ และส่งไฟล์ต้นฉบับไป Gemini เฉพาะเมื่อข้อความมีคุณภาพไม่พอ; ห้ามขอ consent ซ้ำสำหรับ fallback นี้
-- ห้ามเปิดเผยหรือ log API key, Supabase credentials, เนื้อหาเอกสาร หรือข้อมูลนักศึกษา
-- อย่าส่ง `GEMINI_API_KEY` ไปยัง client และอย่าใช้ตัวแปร environment แบบ `NEXT_PUBLIC_` สำหรับ secret
+- เอกสารการศึกษาเป็นข้อมูลอ่อนไหว: ส่งไฟล์ต้นฉบับให้ Typhoon OCR และส่งข้อความ OCR ให้ Typhoon text model เฉพาะจาก server หลังยืนยัน consent เวอร์ชันปัจจุบันแล้วเท่านั้น
+- บันทึกผล OCR ใน `document_extractions` ได้ แต่ห้ามเก็บ error ดิบหรือ log API key, credentials, เนื้อหาเอกสาร หรือข้อมูลนักศึกษา
+- ห้ามส่ง `TYPHOON_API_KEY` ไปยัง client และอย่าใช้ตัวแปร environment แบบ `NEXT_PUBLIC_` สำหรับ secret
 - รักษาการเข้าถึงไฟล์ Supabase ให้เป็น private ตามเจตนาของระบบ
 
 ## แนวทางคุณภาพ
