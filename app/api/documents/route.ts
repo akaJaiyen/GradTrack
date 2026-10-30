@@ -42,8 +42,8 @@ export async function POST(request: NextRequest) {
     parsed.data.type === "academic_source" ? 503 : 500,
   );
   if (parsed.data.type === "transcript") {
-    const { error: clearError } = await db.from("courses").delete().eq("workspace_id", id).eq("source", "transcript");
-    if (clearError) return error("Could not clear previous transcript data", 500);
+    const { error: clearError } = await db.from("transcript_course_drafts").delete().eq("workspace_id", id);
+    if (clearError) return error("Transcript-draft database migration is required. Apply 0011_transcript_course_drafts.sql first.", 503);
   }
   if (parsed.data.type === "curriculum_summary" || parsed.data.type === "course_catalog" || parsed.data.type === "curriculum") {
     const { error: clearError } = await db.from("degree_requirements").delete().eq("workspace_id", id).eq("source", "curriculum");

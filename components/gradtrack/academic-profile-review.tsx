@@ -11,10 +11,12 @@ import { api, coursePayload, fromCourse, grades } from "./shared";
 import type { Tab } from "./shared";
 
 type Progress = { totalCredits: number | null; passedCredits: number; required: RequiredCourseProgress[]; passedRequired: number; pendingConfirmations: number };
+type TranscriptDraft = { id: string; code: string; name: string; credits: number | string; grade: Course["grade"] | null; term: Course["term"] | null; year: number | null; status: "ready" | "needs_review"; parser: "ku_pdf" | "ai"; evidence: { page: number; rowText: string; termHeader: string } };
 
 export function AcademicProfileReview({ tab }: { tab: Tab }) {
   const [profile, setProfile] = useState<AcademicProfileExtraction | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
+  const [drafts, setDrafts] = useState<TranscriptDraft[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -23,6 +25,7 @@ export function AcademicProfileReview({ tab }: { tab: Tab }) {
       const result = await api("/api/academic-profile");
       setProfile(result.data?.extraction_json || null);
       setCourses((result.courses || []).map(fromCourse));
+      setDrafts(result.drafts || []);
       setProgress(result.progress || null);
       setError(null);
     } catch {
@@ -34,7 +37,7 @@ export function AcademicProfileReview({ tab }: { tab: Tab }) {
   useEffect(() => { void load(); }, []);
   if (error) return <p className="text-sm text-red-700" role="alert">{error}</p>;
   if (!loaded) return <section className="card p-6"><p className="text-sm text-slate-600">กำลังโหลดข้อมูลการเรียน…</p></section>;
-  if (tab === "student") return <StudentTermReview courses={courses} reload={load} />;
+  if (tab === "student") return <StudentTermReview courses={courses} drafts={drafts} reload={load} />;
   if (!profile) return <section className="card p-6"><h2 className="font-bold">ยังไม่มีข้อมูลที่ AI อ่านแล้ว</h2><p className="mt-2 text-sm text-slate-600">อัปโหลดเอกสารหลักสูตร, รายวิชา หรือ Transcript จากหน้าเอกสารของฉัน</p></section>;
   const evidence = (path: string) => profile.evidence.find(item => item.path === path);
   return <div className="space-y-5">
@@ -50,7 +53,7 @@ export function AcademicProfileReview({ tab }: { tab: Tab }) {
 
 type CourseField = "code" | "nameTh" | "credits" | "grade" | "term" | "year";
 
-function StudentTermReview({ courses, reload }: { courses: Course[]; reload: () => Promise<void> }) {
+function StudentTermReview({ courses, drafts, reload }: { courses: Course[]; drafts: TranscriptDraft[]; reload: () => Promise<void> }) {
   const [rows, setRows] = useState<Course[]>(courses);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -120,6 +123,7 @@ function StudentTermReview({ courses, reload }: { courses: Course[]; reload: () 
     return next;
   });
   return <section className="space-y-3">
+    <TranscriptDraftReview drafts={drafts} reload={reload} />
     <section className="card p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div><h2 className="font-bold">ผลการเรียนแยกตามเทอม</h2><p className="mt-1 text-sm text-slate-600">แก้ไขข้อมูลรายวิชา แล้วบันทึกเพื่อใช้คำนวณความก้าวหน้า</p></div>
@@ -148,6 +152,25 @@ function StudentTermReview({ courses, reload }: { courses: Course[]; reload: () 
       </section>;
     }) : <section className="card p-6 text-sm text-slate-600">ยังไม่มีรายวิชา เพิ่มรายวิชาเพื่อเริ่มบันทึกผลการเรียน</section>}
     <div className="flex justify-end"><button className="btn btn-primary min-h-10 py-2 disabled:cursor-wait disabled:opacity-60" disabled={saving} type="button" onClick={() => void save()}>{saving ? "กำลังบันทึก…" : "บันทึกการเปลี่ยนแปลง"}</button></div>
+  </section>;
+}
+
+function TranscriptDraftReview({ drafts, reload }: { drafts: TranscriptDraft[]; reload: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const ready = drafts.filter(draft => draft.status === "ready");
+  const grouped = useMemo(() => groupCoursesByTerm(drafts.map(draft => ({ id: draft.id, code: draft.code, nameTh: draft.name, credits: Number(draft.credits), grade: draft.grade || undefined, term: draft.term || undefined, year: draft.year || undefined }))), [drafts]);
+  const draftById = useMemo(() => new Map(drafts.map(draft => [draft.id, draft])), [drafts]);
+  const evidenceById = useMemo(() => new Map(drafts.map(draft => [draft.id, draft.evidence])), [drafts]);
+  const confirm = async (draftIds = ready.map(draft => draft.id)) => {
+    if (!draftIds.length) return;
+    setBusy(true);
+    try { await api("/api/transcript-drafts/confirm", "POST", { draftIds }); await reload(); }
+    finally { setBusy(false); }
+  };
+  if (!drafts.length) return null;
+  return <section className="card overflow-hidden">
+    <div className="flex flex-wrap items-center justify-between gap-3 p-4"><div><h2 className="font-bold">ร่างผลการอ่าน Transcript</h2><p className="mt-1 text-sm text-slate-600">รายการเหล่านี้ยังไม่ถูกนำไปคำนวณจนกว่าจะยืนยัน</p></div><button className="btn btn-primary disabled:cursor-wait disabled:opacity-60" disabled={busy || !ready.length} type="button" onClick={() => void confirm()}>{busy ? "กำลังยืนยัน…" : `ยืนยัน ${ready.length} รายการที่ตรวจสอบได้`}</button></div>
+    {grouped.map(group => <section className="border-t" key={group.key}><h3 className="bg-slate-50 px-4 py-2 text-sm font-semibold">{group.label}</h3><div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="sr-only"><tr><th>รหัส</th><th>ชื่อวิชา</th><th>เกรด</th><th>หน่วยกิต</th><th>สถานะ</th><th>หลักฐาน</th><th>ยืนยัน</th></tr></thead><tbody>{group.courses.map(course => { const draft = draftById.get(course.id)!; const evidence = evidenceById.get(course.id); return <tr className="border-t" key={course.id}><td className="px-4 py-2">{course.code}</td><td className="px-4 py-2">{course.nameTh}</td><td className="px-4 py-2">{course.grade || "—"}</td><td className="px-4 py-2">{course.credits}</td><td className={`px-4 py-2 ${draft.status === "ready" ? "text-emerald-700" : "text-amber-800"}`}>{draft.status === "ready" ? "พร้อมยืนยัน" : "ต้องตรวจสอบ"}</td><td className="max-w-md px-4 py-2 text-xs text-slate-600" title={evidence?.rowText}>{evidence ? `หน้า ${evidence.page} · ${evidence.termHeader || "ไม่พบหัวข้อเทอม"}` : "—"}</td><td className="px-4 py-2"><button className="text-blue-700 underline disabled:text-slate-400" disabled={busy || draft.status !== "ready"} type="button" onClick={() => void confirm([draft.id])}>ยืนยัน</button></td></tr>; })}</tbody></table></div></section>)}
   </section>;
 }
 
