@@ -16,7 +16,7 @@ function canonicalMimeType(fileName: string, mimeType: string) {
 }
 
 const input = z.object({
-  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "transcript", "academic_source"]),
+  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "study_plan", "transcript", "academic_source"]),
   fileName: z.string().trim().min(1).max(160),
   mimeType: z.enum(supportedMimeTypes),
   size: z.number().positive().max(maxFileSize),
