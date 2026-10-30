@@ -36,3 +36,7 @@ Thumbs.db
 .idea
 
 .next-check/
+
+# Local browser-test artifacts and temporary document renders
+.playwright-cli/
+tmp/
