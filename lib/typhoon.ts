@@ -112,7 +112,7 @@ function chunks(text: string, limit = 3_000) {
   return result.length ? result : [text];
 }
 
-export async function extractTyphoonProfile(input: { text: string; sourceDocumentId: string; sourceRole: "study_plan" | "transcript" | "academic_source" }): Promise<AcademicProfileExtraction> {
+export async function extractTyphoonProfile(input: { text: string; sourceDocumentId: string; sourceRole: "study_plan" | "transcript" }): Promise<AcademicProfileExtraction> {
   const model = process.env.TYPHOON_TEXT_MODEL || "typhoon-v2.5-30b-a3b-instruct";
   const parts = chunks(input.text);
   const outputs: AcademicProfileExtraction[] = [];

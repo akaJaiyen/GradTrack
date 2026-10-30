@@ -16,7 +16,7 @@ function canonicalMimeType(fileName: string, mimeType: string) {
 }
 
 const input = z.object({
-  type: z.enum(["curriculum", "curriculum_summary", "course_catalog", "study_plan", "transcript", "academic_source"]),
+  type: z.enum(["study_plan", "transcript"]),
   fileName: z.string().trim().min(1).max(160),
   mimeType: z.enum(supportedMimeTypes),
   size: z.number().positive().max(maxFileSize),
@@ -32,22 +32,13 @@ export async function POST(request: NextRequest) {
     return error(message);
   }
   const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401);
-  // One active document per role. Replacing a source must also invalidate only
-  // the derived data from that source; user-entered rows are deliberately kept.
+  // One active document per role. Replacing a source clears only its unconfirmed
+  // draft data; user-confirmed courses remain available.
   const { data: previous, error: previousError } = await db.from("documents").select("id,file_path").eq("workspace_id", id).eq("type", parsed.data.type);
-  if (previousError) return error(
-    parsed.data.type === "academic_source"
-      ? "Academic-profile database migration is required. Apply 0003_academic_profiles.sql in Supabase first."
-      : "Could not replace previous document",
-    parsed.data.type === "academic_source" ? 503 : 500,
-  );
+  if (previousError) return error("Could not replace previous document", 500);
   if (parsed.data.type === "transcript") {
     const { error: clearError } = await db.from("transcript_course_drafts").delete().eq("workspace_id", id);
     if (clearError) return error("Transcript-draft database migration is required. Apply 0011_transcript_course_drafts.sql first.", 503);
-  }
-  if (parsed.data.type === "curriculum_summary" || parsed.data.type === "course_catalog" || parsed.data.type === "curriculum") {
-    const { error: clearError } = await db.from("degree_requirements").delete().eq("workspace_id", id).eq("source", "curriculum");
-    if (clearError) return error("Could not clear previous curriculum data", 500);
   }
   if (previous?.length) {
     const { error: storageError } = await db.storage.from("private-documents").remove(previous.map(item => item.file_path));

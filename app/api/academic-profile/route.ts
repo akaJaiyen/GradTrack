@@ -59,15 +59,12 @@ export async function POST(request: Request) {
   const { error: draftMigrationError } = await db.from("transcript_course_drafts").select("id").limit(1);
   if (draftMigrationError) return error("Transcript-draft database migration is required. Apply 0011_transcript_course_drafts.sql first.", 503);
   const { data: availableDocuments, error: documentError } = await db.from("documents")
-    .select("id,file_path,mime_type,type").eq("workspace_id", workspaceId).in("type", ["study_plan", "transcript", "academic_source"]);
+    .select("id,file_path,mime_type,type").eq("workspace_id", workspaceId).in("type", ["study_plan", "transcript"]);
   if (documentError) return error("Could not load uploaded documents", 500);
-  // New role-aware uploads take precedence. Existing academic_source rows are
-  // retained as a backwards-compatible source until the user replaces them.
-  const modernDocuments = availableDocuments?.filter(document => document.type === "study_plan" || document.type === "transcript") || [];
-  if (modernDocuments.length && new Set(modernDocuments.map(document => document.type)).size < 2) {
+  const documents = availableDocuments || [];
+  if (documents.length && new Set(documents.map(document => document.type)).size < 2) {
     return error("Upload both Study Plan and Transcript before starting analysis", 409);
   }
-  const documents = modernDocuments.length ? modernDocuments : availableDocuments?.filter(document => document.type === "academic_source") || [];
   if (!documents.length) return error("Upload a Study Plan or Transcript first", 404);
   await db.from("documents").update({ status: "extracting", extraction_error: null }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
   after(async () => {
@@ -101,7 +98,7 @@ export async function POST(request: Request) {
         const { error: saveOcrError } = await db.from("document_extractions").insert({ document_id: document.id, raw_extraction_json: { text: markdown }, confidence: 0.5, extraction_version: "typhoon-ocr-v1" });
         if (saveOcrError) throw new Error("Could not save OCR output");
         stage = "typhoon_text";
-        const extraction = await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" });
+        const extraction = await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" });
         if (document.type === "transcript" && (!kuTranscript || !gate?.ok)) {
           const aiDrafts = aiTranscriptDrafts(extraction, pages.length);
           if (passesTranscriptAcceptanceGate(aiDrafts, pages.length).ok) transcriptDrafts.push({ documentId: document.id, drafts: aiDrafts });
