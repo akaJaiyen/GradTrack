@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { LoaderCircle, Upload } from "lucide-react";
 import { extractLocally } from "@/lib/client-ocr";
+import { documentExtractionErrorMessage } from "@/lib/document-extraction-error";
 import {
   api,
   documentStatusLabels,
@@ -115,6 +116,7 @@ function UploadSlot({ role, title, description, doc, busy, active, retrying, upl
       {doc ? <div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate">{doc.file_name}</span><span className="status info shrink-0">{documentStatusLabels[doc.status] || doc.status}</span></div> : <span className="text-slate-500">ยังไม่ได้อัปโหลดเอกสาร</span>}
     </div>
     {doc?.status === "rate_limited" && <p className="mt-3 text-sm text-amber-700">โควตา Gemini หมด โปรดลองอีกครั้งหลัง quota รีเซ็ตหรือเปิด billing</p>}
+    {doc?.status === "failed" && <p className="mt-3 text-sm text-red-700">สาเหตุ: {documentExtractionErrorMessage(doc.extraction_error)}</p>}
     {(doc?.status === "failed" || doc?.status === "rate_limited") && <button className="mt-3 text-sm font-medium text-blue-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={retrying} onClick={() => void retry()}>ลองอ่านด้วย AI อีกครั้ง</button>}
   </section>;
 }

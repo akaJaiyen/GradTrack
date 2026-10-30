@@ -14,6 +14,7 @@ export type Doc = {
   type: string;
   file_name: string;
   status: string;
+  extraction_error?: string | null;
   created_at: string;
 };
 

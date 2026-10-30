@@ -37,6 +37,20 @@ describe("Gemini academic extraction adapter", () => {
     }
   });
 
+  it("discards malformed model rows instead of rejecting an otherwise usable document", () => {
+    const result = normalizeGeminiAcademicPayload({
+      catalogCourses: [{ code: "CS101", credits: 3 }, { code: "", name: "broken" }],
+      completedCourses: [{ code: "CS101", name: "Programming", credits: 3 }, { code: "CS102", name: "", credits: 3 }],
+      evidence: [{ path: "catalogCourses.0", text: "CS101", confidence: 0.9 }, { path: "", text: "" }],
+    }, sourceDocumentId);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.catalogCourses).toHaveLength(1);
+      expect(result.data.completedCourses).toHaveLength(1);
+      expect(result.data.evidence).toHaveLength(1);
+    }
+  });
+
   it("validates a structured Gemini response", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: validExtraction }] } }] }), { status: 200 })));

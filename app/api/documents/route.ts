@@ -22,7 +22,7 @@ const input = z.object({
   size: z.number().positive().max(maxFileSize),
 });
 async function workspace() { const db = adminDb(), token = await currentToken(); if (!db || !token) return { db, id: null }; const { data } = await db.from("workspaces").select("id,expires_at").eq("anonymous_token_hash", hashToken(token)).gt("expires_at", new Date().toISOString()).maybeSingle(); return { db, id: data?.id ?? null }; }
-export async function GET() { const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401); const { data, error: queryError } = await db.from("documents").select("id,type,file_name,mime_type,status,created_at").eq("workspace_id", id).order("created_at", { ascending: false }); return queryError ? error("Could not load documents", 500) : NextResponse.json({ data }); }
+export async function GET() { const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401); const { data, error: queryError } = await db.from("documents").select("id,type,file_name,mime_type,status,extraction_error,created_at").eq("workspace_id", id).order("created_at", { ascending: false }); return queryError ? error("Could not load documents", 500) : NextResponse.json({ data }); }
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = input.safeParse(body && { ...body, mimeType: canonicalMimeType(body.fileName ?? "", body.mimeType ?? "") });

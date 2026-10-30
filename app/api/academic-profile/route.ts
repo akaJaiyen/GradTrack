@@ -5,6 +5,7 @@ import { mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academi
 import { extractWithGemini, isGeminiRateLimitError } from "@/lib/gemini";
 import { normalizedCourseCode } from "@/lib/extraction";
 import { textForGemini } from "@/lib/local-extraction";
+import { documentExtractionErrorCode, type DocumentExtractionErrorCode, type ExtractionStage } from "@/lib/document-extraction-error";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
 
@@ -44,9 +45,10 @@ export async function POST(request: Request) {
   const modernDocuments = availableDocuments?.filter(document => document.type === "study_plan" || document.type === "transcript") || [];
   const documents = modernDocuments.length ? modernDocuments : availableDocuments?.filter(document => document.type === "academic_source") || [];
   if (!documents.length) return error("Upload a Study Plan or Transcript first", 404);
-  await db.from("documents").update({ status: "extracting" }).eq("id", documents[0].id).eq("workspace_id", workspaceId);
+  await db.from("documents").update({ status: "extracting", extraction_error: null }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
   after(async () => {
     let extractionFailedIds: string[] = [];
+    let stage: ExtractionStage = "gemini";
     try {
     const { data: storedExtractions } = await db.from("document_extractions")
       .select("document_id,raw_extraction_json,confidence,created_at")
@@ -59,34 +61,42 @@ export async function POST(request: Request) {
       const payload = stored.raw_extraction_json as { text?: unknown } | null;
       if (typeof payload?.text === "string") localExtractions.set(stored.document_id, { text: payload.text, confidence: stored.confidence });
     }
-    const extractionAttempts: Array<{ document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractWithGemini>> } | { document: typeof documents[number]; error: Error }> = [];
+    type ExtractionSuccess = { document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractWithGemini>> };
+    type ExtractionFailure = { document: typeof documents[number]; error: Error; errorCode: DocumentExtractionErrorCode };
+    const extractionAttempts: Array<ExtractionSuccess | ExtractionFailure> = [];
     for (let index = 0; index < documents.length; index += 1) {
       const document = documents[index];
       if (index > 0) await db.from("documents").update({ status: "extracting" }).eq("id", document.id).eq("workspace_id", workspaceId);
       try {
         const localText = textForGemini(localExtractions.get(document.id));
         if (localText) {
+          stage = "gemini";
           extractionAttempts.push({ document, extraction: await extractWithGemini({ text: localText, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
         } else {
+          stage = "storage_download";
           const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
           if (downloadError || !file) throw new Error("Could not download an uploaded document");
+          stage = "gemini";
           extractionAttempts.push({ document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
         }
       } catch (caught) {
         const error = caught instanceof Error ? caught : new Error("Could not read uploaded document");
-        extractionAttempts.push({ document, error });
+        const errorCode = documentExtractionErrorCode(error, stage);
+        console.error("Document extraction failed", { stage, errorCode, httpStatus: "status" in error ? error.status : undefined });
+        extractionAttempts.push({ document, error, errorCode });
         if (isGeminiRateLimitError(error)) break;
       }
     }
-    const failures = extractionAttempts.filter((attempt): attempt is typeof attempt & { error: Error } => "error" in attempt);
+    const failures = extractionAttempts.filter((attempt): attempt is ExtractionFailure => "error" in attempt);
     if (failures.length) {
       extractionFailedIds = failures.map(attempt => attempt.document.id);
       const rateLimitedIds = failures.filter(attempt => isGeminiRateLimitError(attempt.error)).map(attempt => attempt.document.id);
-      const failedIds = extractionFailedIds.filter(id => !rateLimitedIds.includes(id));
+      const failedAttempts = failures.filter(attempt => !rateLimitedIds.includes(attempt.document.id));
+      const failedIds = failedAttempts.map(attempt => attempt.document.id);
       await Promise.all([
-        rateLimitedIds.length ? db.from("documents").update({ status: "rate_limited" }).in("id", rateLimitedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
-        failedIds.length ? db.from("documents").update({ status: "failed" }).in("id", failedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
-        db.from("documents").update({ status: "uploaded" }).in("id", extractionAttempts.filter(attempt => !("error" in attempt)).map(attempt => attempt.document.id)).eq("workspace_id", workspaceId),
+        rateLimitedIds.length ? db.from("documents").update({ status: "rate_limited", extraction_error: "gemini_rate_limited" }).in("id", rateLimitedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
+        ...failedAttempts.map(attempt => db.from("documents").update({ status: "failed", extraction_error: attempt.errorCode }).eq("id", attempt.document.id).eq("workspace_id", workspaceId)),
+        db.from("documents").update({ status: "uploaded", extraction_error: null }).in("id", extractionAttempts.filter(attempt => !("error" in attempt)).map(attempt => attempt.document.id)).eq("workspace_id", workspaceId),
       ]);
       throw failures[0].error;
     }
@@ -96,6 +106,7 @@ export async function POST(request: Request) {
     const profile = mergeAcademicExtractions(extractions);
     const status = profile.profile.status;
     const requirements = requirementsFromProfile(profile);
+    stage = "profile_save";
     const { error: profileError } = await db.rpc("replace_academic_profile", {
       p_workspace_id: workspaceId, p_extraction: profile, p_source_document_ids: documents.map(document => document.id), p_status: status,
       p_consented_at: workspace.consented_at,
@@ -103,9 +114,12 @@ export async function POST(request: Request) {
       p_requirements: requirements.map(requirement => ({ category_name: requirement.category, requirement_type: requirement.type, required_course_code: requirement.code, required_course_name: requirement.name, minimum_credits: requirement.minimumCredits })),
     });
     if (profileError) throw profileError;
-    await db.from("documents").update({ status: status === "ready" ? "ready" : "review_needed" }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
-    } catch {
-      if (!extractionFailedIds.length) await db.from("documents").update({ status: "failed" }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
+    await db.from("documents").update({ status: status === "ready" ? "ready" : "review_needed", extraction_error: null }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
+    } catch (caught) {
+      const errorCode = documentExtractionErrorCode(caught, stage);
+      const httpStatus = caught && typeof caught === "object" && "status" in caught ? (caught as { status?: unknown }).status : undefined;
+      console.error("Academic profile extraction failed", { stage, errorCode, httpStatus });
+      if (!extractionFailedIds.length) await db.from("documents").update({ status: "failed", extraction_error: errorCode }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
     }
   });
   return NextResponse.json({ accepted: true }, { status: 202 });
