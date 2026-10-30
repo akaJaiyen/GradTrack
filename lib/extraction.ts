@@ -36,6 +36,18 @@ export type Extraction = z.infer<typeof extractionSchema>;
  */
 const nullableText = z.string().trim().max(250).nullable().default(null);
 const sourceKindSchema = z.enum(["curriculum", "catalog", "transcript", "mixed", "unknown"]);
+const requiredCourseSchema = z.object({
+  /** Stable within the saved extraction; never use a guessed course code as the id. */
+  id: z.string().trim().min(1).max(160),
+  groupId: z.string().trim().min(1).max(100).nullable().default(null),
+  code: z.string().trim().min(2).max(40).nullable().default(null),
+  nameTh: nullableText,
+  nameEn: nullableText,
+  credits: z.number().positive().max(99).nullable().default(null),
+  evidencePath: z.string().trim().min(1).max(500).default("curriculum.requiredCourses"),
+}).refine(course => Boolean(course.code || course.nameTh || course.nameEn), {
+  message: "A required course needs a code or a name",
+});
 export const academicProfileExtractionSchema = z.object({
   profile: z.object({
     institution: nullableText,
@@ -55,6 +67,9 @@ export const academicProfileExtractionSchema = z.object({
       minimumCredits: z.number().nonnegative().max(999).nullable().default(null),
       requiredCourseCodes: z.array(z.string().trim().min(2).max(40)).max(500).default([]),
     })).max(200).default([]),
+    // Kept separate from a catalogue: a study plan can require a named course
+    // without publishing a course code, and that name must not be discarded.
+    requiredCourses: z.array(requiredCourseSchema).max(1000).default([]),
   }),
   catalogCourses: z.array(z.object({
     code: z.string().trim().min(2).max(40),

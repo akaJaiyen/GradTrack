@@ -12,6 +12,7 @@ export function mergeAcademicExtractions(extractions: AcademicProfileExtraction[
   const catalogs = new Map<string, AcademicProfileExtraction["catalogCourses"][number]>();
   const completed = new Map<string, AcademicProfileExtraction["completedCourses"][number]>();
   const groups = new Map<string, AcademicProfileExtraction["curriculum"]["requirementGroups"][number]>();
+  const requiredCourses = new Map<string, AcademicProfileExtraction["curriculum"]["requiredCourses"][number]>();
   const unresolved = new Set<string>();
   const warnings = new Set<string>();
 
@@ -23,6 +24,10 @@ export function mergeAcademicExtractions(extractions: AcademicProfileExtraction[
     }
     result.profile.languages = [...new Set([...result.profile.languages, ...extraction.profile.languages])];
     for (const group of extraction.curriculum.requirementGroups) if (!groups.has(group.id)) groups.set(group.id, group);
+    for (const course of extraction.curriculum.requiredCourses) {
+      const key = course.code ? `code:${normalizedCourseCode(course.code)}` : `name:${(course.nameTh || course.nameEn || course.id).trim().toLowerCase()}`;
+      if (!requiredCourses.has(key)) requiredCourses.set(key, course);
+    }
     if (result.curriculum.totalCreditsRequired === null && extraction.curriculum.totalCreditsRequired !== null) result.curriculum.totalCreditsRequired = extraction.curriculum.totalCreditsRequired;
     for (const course of extraction.catalogCourses) {
       const key = normalizedCourseCode(course.code);
@@ -42,6 +47,7 @@ export function mergeAcademicExtractions(extractions: AcademicProfileExtraction[
     result.sources.push(...extraction.sources);
   }
   result.curriculum.requirementGroups = [...groups.values()];
+  result.curriculum.requiredCourses = [...requiredCourses.values()];
   result.catalogCourses = [...catalogs.values()];
   result.completedCourses = [...completed.values()];
   result.warnings = [...warnings];
@@ -58,6 +64,20 @@ export function requirementsFromProfile(profile: AcademicProfileExtraction) {
       const catalog = profile.catalogCourses.find(course => normalizedCourseCode(course.code) === normalizedCourseCode(code));
       rows.push({ category: group.name, type: "required_course", code: normalizedCourseCode(code), name: catalog?.nameTh || catalog?.nameEn || null, minimumCredits: catalog?.credits ?? null });
     }
+  }
+  // New study-plan data is authoritative.  Fall back to the legacy group
+  // codes above for profiles extracted before requiredCourses existed.
+  if (profile.curriculum.requiredCourses.length) {
+    return [
+      ...(profile.curriculum.totalCreditsRequired !== null ? [{ category: "หน่วยกิตรวม", type: "total_credit" as const, code: null, name: null, minimumCredits: profile.curriculum.totalCreditsRequired }] : []),
+      ...profile.curriculum.requirementGroups
+        .filter(group => (group.kind === "elective_bucket" || group.kind === "credit_bucket") && group.minimumCredits !== null)
+        .map(group => ({ category: group.name, type: "elective_credit" as const, code: null, name: null, minimumCredits: group.minimumCredits })),
+      ...profile.curriculum.requiredCourses.map(course => {
+        const group = course.groupId ? profile.curriculum.requirementGroups.find(item => item.id === course.groupId) : undefined;
+        return { category: group?.name || "วิชาบังคับ", type: "required_course" as const, code: course.code ? normalizedCourseCode(course.code) : null, name: course.nameTh || course.nameEn, minimumCredits: course.credits };
+      }),
+    ];
   }
   return rows;
 }

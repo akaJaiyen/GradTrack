@@ -29,4 +29,15 @@ describe("academic profile schema", () => {
     const result = academicProfileExtractionSchema.safeParse({ profile: {}, curriculum: {}, catalogCourses: [], completedCourses: [{ code: "", name: "Unknown", credits: 3 }], unresolvedCourses: [], evidence: [], warnings: [], sources: [] });
     expect(result.success).toBe(false);
   });
+
+  it("creates a requirement for a named study-plan course even when no code is published", () => {
+    const profile = academicProfileExtractionSchema.parse({
+      profile: {}, curriculum: { totalCreditsRequired: 121, requiredCourses: [{ id: "language", groupId: null, code: null, nameTh: "ภาษาต่างประเทศ 1", nameEn: null, credits: 3, evidencePath: "curriculum.requiredCourses.0" }] },
+      catalogCourses: [], completedCourses: [], unresolvedCourses: [], evidence: [], warnings: [], sources: [],
+    });
+    expect(requirementsFromProfile(profile)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "total_credit", minimumCredits: 121 }),
+      expect.objectContaining({ type: "required_course", code: null, name: "ภาษาต่างประเทศ 1", minimumCredits: 3 }),
+    ]));
+  });
 });

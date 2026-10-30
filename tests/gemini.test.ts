@@ -25,6 +25,18 @@ describe("Gemini academic extraction adapter", () => {
     }
   });
 
+  it("preserves a named study-plan requirement when its course code is absent", () => {
+    const result = normalizeGeminiAcademicPayload({
+      curriculum: { total_credits_required: 121, required_courses: [{ id: "term-1-language", name_th: "ภาษาต่างประเทศ 1", credits: 3 }] },
+      detected_kind: "curriculum",
+    }, sourceDocumentId);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.curriculum.totalCreditsRequired).toBe(121);
+      expect(result.data.curriculum.requiredCourses[0]).toMatchObject({ code: null, nameTh: "ภาษาต่างประเทศ 1", credits: 3 });
+    }
+  });
+
   it("validates a structured Gemini response", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: validExtraction }] } }] }), { status: 200 })));
