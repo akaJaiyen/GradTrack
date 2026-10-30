@@ -38,6 +38,7 @@ export const documentStatusLabels: Record<string, string> = {
   review_needed: "ต้องตรวจสอบ",
   ready: "พร้อมใช้",
   failed: "อ่านไม่สำเร็จ",
+  rate_limited: "โควตา AI หมด",
 };
 
 export async function api(path: string, method = "GET", body?: unknown) {

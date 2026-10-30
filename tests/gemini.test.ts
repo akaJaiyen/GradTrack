@@ -59,4 +59,12 @@ describe("Gemini academic extraction adapter", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 })));
     await expect(extractWithGemini({ bytes: new Uint8Array([1]), mimeType: "application/pdf", sourceDocumentId })).rejects.toThrow("Gemini request failed");
   });
+
+  it("does not retry a rate-limited Gemini request", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { status: "RESOURCE_EXHAUSTED", message: "Quota exceeded" } }), { status: 429 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(extractWithGemini({ bytes: new Uint8Array([1]), mimeType: "application/pdf", sourceDocumentId })).rejects.toThrow("Gemini request failed");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

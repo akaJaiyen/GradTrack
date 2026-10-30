@@ -35,7 +35,7 @@ export function DocumentsPage({
   }, []);
   useEffect(() => {
     if (!isExtracting) return;
-    const timer = window.setTimeout(() => void reload(), 5_000);
+    const timer = window.setTimeout(() => void reload(), 15_000);
     return () => window.clearTimeout(timer);
   }, [isExtracting, reload]);
   const upload = async (role: "study_plan" | "transcript", files: FileList | null) => {
@@ -118,7 +118,8 @@ function UploadSlot({ role, title, description, doc, consent, busy, active, uplo
     <div className="mt-4 rounded bg-white p-3 text-sm">
       {doc ? <div className="flex items-center justify-between gap-3"><span className="min-w-0 truncate">{doc.file_name}</span><span className="status info shrink-0">{documentStatusLabels[doc.status] || doc.status}</span></div> : <span className="text-slate-500">ยังไม่ได้อัปโหลดเอกสาร</span>}
     </div>
-    {doc?.status === "failed" && <button className="mt-3 text-sm font-medium text-blue-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={busy} onClick={() => void retry()}>ลองอ่านด้วย AI อีกครั้ง</button>}
+    {doc?.status === "rate_limited" && <p className="mt-3 text-sm text-amber-700">โควตา Gemini หมด โปรดลองอีกครั้งหลัง quota รีเซ็ตหรือเปิด billing</p>}
+    {(doc?.status === "failed" || doc?.status === "rate_limited") && <button className="mt-3 text-sm font-medium text-blue-700 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-50" type="button" disabled={busy} onClick={() => void retry()}>ลองอ่านด้วย AI อีกครั้ง</button>}
   </section>;
 }
 

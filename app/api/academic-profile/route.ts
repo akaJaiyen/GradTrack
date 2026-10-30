@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { error, unavailable } from "@/lib/api";
 import { mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
-import { extractWithGemini } from "@/lib/gemini";
+import { extractWithGemini, isGeminiRateLimitError } from "@/lib/gemini";
 import { normalizedCourseCode } from "@/lib/extraction";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
@@ -43,24 +43,32 @@ export async function POST(request: Request) {
   const modernDocuments = availableDocuments?.filter(document => document.type === "study_plan" || document.type === "transcript") || [];
   const documents = modernDocuments.length ? modernDocuments : availableDocuments?.filter(document => document.type === "academic_source") || [];
   if (!documents.length) return error("Upload a Study Plan or Transcript first", 404);
-  await db.from("documents").update({ status: "extracting" }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
+  await db.from("documents").update({ status: "extracting" }).eq("id", documents[0].id).eq("workspace_id", workspaceId);
   after(async () => {
     let extractionFailedIds: string[] = [];
     try {
-    const extractionAttempts = await Promise.all(documents.map(async document => {
+    const extractionAttempts: Array<{ document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractWithGemini>> } | { document: typeof documents[number]; error: Error }> = [];
+    for (let index = 0; index < documents.length; index += 1) {
+      const document = documents[index];
+      if (index > 0) await db.from("documents").update({ status: "extracting" }).eq("id", document.id).eq("workspace_id", workspaceId);
       try {
         const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
         if (downloadError || !file) throw new Error("Could not download an uploaded document");
-        return { document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) };
+        extractionAttempts.push({ document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
       } catch (caught) {
-        return { document, error: caught instanceof Error ? caught : new Error("Could not read uploaded document") };
+        const error = caught instanceof Error ? caught : new Error("Could not read uploaded document");
+        extractionAttempts.push({ document, error });
+        if (isGeminiRateLimitError(error)) break;
       }
-    }));
+    }
     const failures = extractionAttempts.filter((attempt): attempt is typeof attempt & { error: Error } => "error" in attempt);
     if (failures.length) {
       extractionFailedIds = failures.map(attempt => attempt.document.id);
+      const rateLimitedIds = failures.filter(attempt => isGeminiRateLimitError(attempt.error)).map(attempt => attempt.document.id);
+      const failedIds = extractionFailedIds.filter(id => !rateLimitedIds.includes(id));
       await Promise.all([
-        db.from("documents").update({ status: "failed" }).in("id", extractionFailedIds).eq("workspace_id", workspaceId),
+        rateLimitedIds.length ? db.from("documents").update({ status: "rate_limited" }).in("id", rateLimitedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
+        failedIds.length ? db.from("documents").update({ status: "failed" }).in("id", failedIds).eq("workspace_id", workspaceId) : Promise.resolve(),
         db.from("documents").update({ status: "uploaded" }).in("id", extractionAttempts.filter(attempt => !("error" in attempt)).map(attempt => attempt.document.id)).eq("workspace_id", workspaceId),
       ]);
       throw failures[0].error;

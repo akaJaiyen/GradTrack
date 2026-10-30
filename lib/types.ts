@@ -1,5 +1,5 @@
 export type DocumentType = "curriculum" | "curriculum_summary" | "course_catalog" | "study_plan" | "transcript" | "academic_source";
-export type DocumentStatus = "uploaded" | "extracting" | "review_needed" | "ready" | "failed";
+export type DocumentStatus = "uploaded" | "extracting" | "review_needed" | "ready" | "failed" | "rate_limited";
 export type Grade = "A" | "B+" | "B" | "C+" | "C" | "D+" | "D" | "F" | "P" | "S" | "W" | "I" | "N";
 export type Course = { id: string; code: string; nameTh: string; nameEn?: string; credits: number; grade?: Grade; term?: string; year?: number; verified?: boolean };
 export type Requirement = { id: string; category: string; type: "required_course" | "elective_credit" | "total_credit"; code?: string; name?: string; minimumCredits?: number; prerequisiteCodes?: string[]; verified?: boolean };

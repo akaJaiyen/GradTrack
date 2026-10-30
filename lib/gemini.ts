@@ -1,14 +1,18 @@
 import { academicProfileExtractionSchema, type AcademicProfileExtraction } from "@/lib/extraction";
 
-// Deployments may override the primary model. Keep compatible multimodal
-// fallbacks because document reading should remain available during capacity spikes.
+// Deployments may override the primary model. Use one model for each queued
+// extraction so a rate-limited fallback cannot consume another model's quota.
 const configuredModel = () => process.env.GEMINI_MODEL;
-const modelCandidates = () => [...new Set([configuredModel(), "gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite"].filter(Boolean) as string[])];
-const retryDelaysMs = process.env.NODE_ENV === "test" ? [0, 0, 0] : [2_000, 5_000, 10_000];
+const modelCandidates = () => [configuredModel() || "gemini-3.5-flash-lite"];
+const retryDelaysMs = process.env.NODE_ENV === "test" ? [0] : [2_000];
 const endpoint = (model: string) => `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-class GeminiRequestError extends Error {
-  constructor(message: string, readonly retryable: boolean) { super(message); }
+export class GeminiRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly rateLimited: boolean) { super(message); }
+}
+
+export function isGeminiRateLimitError(error: unknown) {
+  return error instanceof GeminiRequestError && error.rateLimited;
 }
 
 const instruction = `You extract academic records from ONE uploaded document. Return JSON only. Never infer or invent missing facts. Use [] or null for absent values. Extract curriculum credit groups, required courses, catalog courses, completed transcript courses, unresolved course rows, and warnings when present. Preserve Thai and English names.
@@ -74,13 +78,19 @@ export async function extractWithGemini(input: { bytes: Uint8Array; mimeType: st
       }),
     });
     if (!response.ok) {
-      const failure = await response.json().catch(() => null) as { error?: { message?: string } } | null;
-      throw new GeminiRequestError(`Gemini request failed (${response.status})${failure?.error?.message ? `: ${failure.error.message}` : ""}`, response.status === 429 || response.status >= 500);
+      const failure = await response.json().catch(() => null) as { error?: { message?: string; status?: string } } | null;
+      const detail = `${failure?.error?.status || ""} ${failure?.error?.message || ""}`;
+      const rateLimited = response.status === 429 || /resource_exhausted|rate.?limit|quota/i.test(detail);
+      throw new GeminiRequestError(`Gemini request failed (${response.status})${failure?.error?.message ? `: ${failure.error.message}` : ""}`, response.status, rateLimited);
     }
     const payload = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
     const text = payload.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("");
     if (!text) throw new Error("Gemini returned no extraction");
-    return normalizeGeminiAcademicPayload(JSON.parse(text), input.sourceDocumentId);
+    try {
+      return normalizeGeminiAcademicPayload(JSON.parse(text), input.sourceDocumentId);
+    } catch {
+      return normalizeGeminiAcademicPayload({ completedCourses: [{ code: "", name: "", credits: 0 }] }, input.sourceDocumentId);
+    }
   };
   let lastError: Error = new Error("Gemini returned an invalid academic profile");
   for (const model of modelCandidates()) {
@@ -94,7 +104,7 @@ export async function extractWithGemini(input: { bytes: Uint8Array; mimeType: st
         break;
       } catch (caught) {
         lastError = caught instanceof Error ? caught : lastError;
-        if (!(caught instanceof GeminiRequestError) || !caught.retryable || attempt === retryDelaysMs.length) break;
+        if (!(caught instanceof GeminiRequestError) || caught.rateLimited || caught.status < 500 || attempt === retryDelaysMs.length) break;
         await new Promise(resolve => setTimeout(resolve, retryDelaysMs[attempt]));
       }
     }
