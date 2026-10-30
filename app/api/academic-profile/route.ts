@@ -17,7 +17,7 @@ export async function GET() {
   if (!workspaceId) return error("Unauthorized", 401);
   const [profileResult, coursesResult, requirementsResult, matchesResult] = await Promise.all([
     db.from("academic_profiles").select("*").eq("workspace_id", workspaceId).maybeSingle(),
-    db.from("courses").select("id,code,name_th,credits,grade").eq("workspace_id", workspaceId),
+    db.from("courses").select("id,code,name_th,name_en,credits,grade,term,year,verified_by_user").eq("workspace_id", workspaceId),
     db.from("degree_requirements").select("id,category_name,requirement_type,required_course_code,required_course_name,minimum_credits").eq("workspace_id", workspaceId),
     db.from("course_matches").select("course_id,degree_requirement_id,status").eq("workspace_id", workspaceId),
   ]);
@@ -26,7 +26,7 @@ export async function GET() {
     ? error("Academic-profile database migration is required. Apply 0003_academic_profiles.sql in Supabase first.", 503)
     : coursesResult.error || requirementsResult.error || matchesResult.error
       ? error("Could not load academic progress", 500)
-      : NextResponse.json({ data, progress: curriculumProgress(coursesResult.data || [], requirementsResult.data || [], matchesResult.data || []) });
+      : NextResponse.json({ data, courses: coursesResult.data || [], progress: curriculumProgress(coursesResult.data || [], requirementsResult.data || [], matchesResult.data || []) });
 }
 
 const input = z.object({ consent: z.boolean() });

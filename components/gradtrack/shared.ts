@@ -61,6 +61,9 @@ export const fromCourse = (value: any): Course => ({
   nameTh: value.name_th || "",
   credits: Number(value.credits),
   grade: value.grade || undefined,
+  term: value.term || undefined,
+  year: value.year === null || value.year === undefined ? undefined : Number(value.year),
+  verified: value.verified_by_user ?? undefined,
 });
 export const fromRequirement = (value: any): Requirement => ({
   id: value.id,
@@ -76,6 +79,8 @@ export const coursePayload = (value: Course) => ({
   nameTh: value.nameTh,
   credits: Number(value.credits),
   grade: value.grade || null,
+  term: value.term || null,
+  year: value.year || null,
   verified: true,
   source: "manual",
 });
