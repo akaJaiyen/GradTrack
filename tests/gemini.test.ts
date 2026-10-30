@@ -44,6 +44,16 @@ describe("Gemini academic extraction adapter", () => {
     expect(result.profile.institution).toBe("Example");
   });
 
+  it("sends local text instead of document bytes when available", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: validExtraction }] } }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await extractWithGemini({ text: "--- Page 1 ---\nCourse details", sourceDocumentId });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.contents[0].parts).toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining("Course details") })]));
+    expect(body.contents[0].parts.some((part: { inlineData?: unknown }) => part.inlineData)).toBe(false);
+  });
+
   it("retries once when Gemini returns malformed JSON", async () => {
     vi.stubEnv("GEMINI_API_KEY", "test-key");
     const fetchMock = vi.fn()

@@ -4,6 +4,7 @@ import { error, unavailable } from "@/lib/api";
 import { mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
 import { extractWithGemini, isGeminiRateLimitError } from "@/lib/gemini";
 import { normalizedCourseCode } from "@/lib/extraction";
+import { textForGemini } from "@/lib/local-extraction";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
 
@@ -47,14 +48,30 @@ export async function POST(request: Request) {
   after(async () => {
     let extractionFailedIds: string[] = [];
     try {
+    const { data: storedExtractions } = await db.from("document_extractions")
+      .select("document_id,raw_extraction_json,confidence,created_at")
+      .in("document_id", documents.map(document => document.id))
+      .eq("extraction_version", "client-ocr-v1")
+      .order("created_at", { ascending: false });
+    const localExtractions = new Map<string, { text: string; confidence: number }>();
+    for (const stored of storedExtractions || []) {
+      if (localExtractions.has(stored.document_id)) continue;
+      const payload = stored.raw_extraction_json as { text?: unknown } | null;
+      if (typeof payload?.text === "string") localExtractions.set(stored.document_id, { text: payload.text, confidence: stored.confidence });
+    }
     const extractionAttempts: Array<{ document: typeof documents[number]; extraction: Awaited<ReturnType<typeof extractWithGemini>> } | { document: typeof documents[number]; error: Error }> = [];
     for (let index = 0; index < documents.length; index += 1) {
       const document = documents[index];
       if (index > 0) await db.from("documents").update({ status: "extracting" }).eq("id", document.id).eq("workspace_id", workspaceId);
       try {
-        const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
-        if (downloadError || !file) throw new Error("Could not download an uploaded document");
-        extractionAttempts.push({ document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
+        const localText = textForGemini(localExtractions.get(document.id));
+        if (localText) {
+          extractionAttempts.push({ document, extraction: await extractWithGemini({ text: localText, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
+        } else {
+          const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
+          if (downloadError || !file) throw new Error("Could not download an uploaded document");
+          extractionAttempts.push({ document, extraction: await extractWithGemini({ bytes: new Uint8Array(await file.arrayBuffer()), mimeType: document.mime_type, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" | "academic_source" }) });
+        }
       } catch (caught) {
         const error = caught instanceof Error ? caught : new Error("Could not read uploaded document");
         extractionAttempts.push({ document, error });

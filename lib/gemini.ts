@@ -63,7 +63,12 @@ export function normalizeGeminiAcademicPayload(raw: unknown, sourceDocumentId: s
   });
 }
 
-export async function extractWithGemini(input: { bytes: Uint8Array; mimeType: string; sourceDocumentId: string; sourceRole?: "study_plan" | "transcript" | "academic_source" }): Promise<AcademicProfileExtraction> {
+type GeminiExtractionInput = {
+  sourceDocumentId: string;
+  sourceRole?: "study_plan" | "transcript" | "academic_source";
+} & ({ text: string } | { bytes: Uint8Array; mimeType: string });
+
+export async function extractWithGemini(input: GeminiExtractionInput): Promise<AcademicProfileExtraction> {
   if (!process.env.GEMINI_API_KEY) throw new Error("Gemini is not configured. Add GEMINI_API_KEY on the server.");
   const request = async (model: string, repair = false) => {
     const response = await fetch(endpoint(model), {
@@ -72,7 +77,9 @@ export async function extractWithGemini(input: { bytes: Uint8Array; mimeType: st
       body: JSON.stringify({
         contents: [{ parts: [
           { text: `${instruction}\nSource document ID: ${input.sourceDocumentId}. Declared document role: ${input.sourceRole || "academic_source"}.${repair ? " Your previous response was invalid. Return a schema-valid JSON object only." : ""}` },
-          { inlineData: { mimeType: input.mimeType, data: Buffer.from(input.bytes).toString("base64") } },
+          ...("text" in input
+            ? [{ text: `Extract only from this locally extracted document text:\n${input.text}` }]
+            : [{ inlineData: { mimeType: input.mimeType, data: Buffer.from(input.bytes).toString("base64") } }]),
         ] }],
         generationConfig: { responseMimeType: "application/json", temperature: 0 },
       }),

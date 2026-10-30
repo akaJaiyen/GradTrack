@@ -24,7 +24,9 @@ export async function extractLocally(file: File): Promise<OcrResult> {
     pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
     const document = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
     let text = "";
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) text += "\n" + joinPdfTextItems((await (await document.getPage(pageNumber)).getTextContent()).items);
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber++) {
+      text += `\n\n--- Page ${pageNumber} ---\n` + joinPdfTextItems((await (await document.getPage(pageNumber)).getTextContent()).items);
+    }
     return { text, confidence: text.trim() ? .72 : .1, courses: parseTranscript(text) };
   }
   const { createWorker } = await import("tesseract.js");

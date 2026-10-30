@@ -22,7 +22,7 @@ GradTrack คือเว็บติดตามแผนและความ�
 
 - Stack: Next.js 15 App Router, React 19, TypeScript และ Tailwind CSS
 - ฐานข้อมูล/ไฟล์: Supabase และ private bucket ชื่อ `private-documents`
-- AI extraction: Gemini ใช้เฉพาะฝั่งเซิร์ฟเวอร์และต้องได้รับ consent จากผู้ใช้ก่อนส่งไฟล์
+- AI extraction: Gemini ใช้เฉพาะฝั่งเซิร์ฟเวอร์และต้องได้รับ consent จากผู้ใช้ก่อนส่งข้อมูลเอกสาร โดย consent ครั้งเดียวครอบคลุมข้อความที่สกัดในเครื่องและไฟล์ต้นฉบับที่ส่งเป็น fallback เมื่อคุณภาพข้อความไม่พอ
 - UI หลักใช้ภาษาไทย (`<html lang="th">`) และมี routing ตาม locale ใน `app/[locale]`
 - แอปทำงานแบบ demo ได้เมื่อยังไม่ได้ตั้งค่า Supabase
 
@@ -59,6 +59,7 @@ npm run build    # type-check และ production build
 ## ข้อกำหนดด้านข้อมูลและความปลอดภัย
 
 - เอกสารการศึกษาเป็นข้อมูลอ่อนไหว: ส่งไป Gemini เฉพาะจาก server หลังยืนยัน consent แล้วเท่านั้น
+- ให้สกัดข้อความในเครื่องก่อนเมื่อทำได้ และส่งไฟล์ต้นฉบับไป Gemini เฉพาะเมื่อข้อความมีคุณภาพไม่พอ; ห้ามขอ consent ซ้ำสำหรับ fallback นี้
 - ห้ามเปิดเผยหรือ log API key, Supabase credentials, เนื้อหาเอกสาร หรือข้อมูลนักศึกษา
 - อย่าส่ง `GEMINI_API_KEY` ไปยัง client และอย่าใช้ตัวแปร environment แบบ `NEXT_PUBLIC_` สำหรับ secret
 - รักษาการเข้าถึงไฟล์ Supabase ให้เป็น private ตามเจตนาของระบบ
