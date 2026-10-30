@@ -33,8 +33,8 @@ export async function POST(request: Request) {
   const { db, workspaceId } = await workspaceContext();
   if (!db) return unavailable();
   if (!workspaceId) return error("Unauthorized", 401);
-  const { data: existing } = await db.from("academic_profiles").select("consented_at").eq("workspace_id", workspaceId).maybeSingle();
-  if (!existing?.consented_at && !body.data.consent) return error("Consent is required before sending documents to Gemini");
+  const { data: workspace } = await db.from("workspaces").select("consented_at").eq("id", workspaceId).maybeSingle();
+  if (!workspace?.consented_at || !body.data.consent) return error("Consent is required before sending documents to Gemini");
   const { data: availableDocuments, error: documentError } = await db.from("documents")
     .select("id,file_path,mime_type,type").eq("workspace_id", workspaceId).in("type", ["study_plan", "transcript", "academic_source"]);
   if (documentError) return error("Could not load uploaded documents", 500);
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const requirements = requirementsFromProfile(profile);
     const { error: profileError } = await db.rpc("replace_academic_profile", {
       p_workspace_id: workspaceId, p_extraction: profile, p_source_document_ids: documents.map(document => document.id), p_status: status,
-      p_consented_at: existing?.consented_at || new Date().toISOString(),
+      p_consented_at: workspace.consented_at,
       p_courses: profile.completedCourses.map(course => ({ code: normalizedCourseCode(course.code), name_th: course.name, credits: course.credits, grade: course.grade, term: course.term, year: course.academicYear })),
       p_requirements: requirements.map(requirement => ({ category_name: requirement.category, requirement_type: requirement.type, required_course_code: requirement.code, required_course_name: requirement.name, minimum_credits: requirement.minimumCredits })),
     });

@@ -49,6 +49,8 @@ export function GradTrackApp({
   const [requirements, setRequirements] = useState<Requirement[]>([]);
   const [workspace, setWorkspace] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showConsent, setShowConsent] = useState(false);
+  const [savingConsent, setSavingConsent] = useState(false);
   const workspaceInitialized = useRef(false);
   const load = async () => {
     try {
@@ -62,6 +64,8 @@ export function GradTrackApp({
       setCourses(dashboard.courses.map(fromCourse));
       setRequirements(dashboard.requirements.map(fromRequirement));
       setWorkspace(true);
+      const consent = await api("/api/consent");
+      setShowConsent(!consent.consentedAt);
     } catch {
       setNotice("โหมดตัวอย่าง — ตั้งค่า Supabase เพื่อบันทึกข้อมูลจริง");
     }
@@ -106,6 +110,17 @@ export function GradTrackApp({
       setNotice("ลบ workspace แล้ว");
     } catch {
       setNotice("ลบ workspace ไม่สำเร็จ");
+    }
+  };
+  const confirmConsent = async () => {
+    setSavingConsent(true);
+    try {
+      await api("/api/consent", "POST");
+      setShowConsent(false);
+    } catch {
+      setNotice("บันทึกความยินยอมไม่สำเร็จ โปรดลองอีกครั้ง");
+    } finally {
+      setSavingConsent(false);
     }
   };
   return (
@@ -161,7 +176,7 @@ export function GradTrackApp({
           </section>
         )}
         {view === "upload" && (
-          workspace ? <DocumentsPage docs={docs} reload={load} notice={setNotice} go={go} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
+          workspace ? <DocumentsPage docs={docs} reload={load} notice={setNotice} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
         )}
         {view === "review" && (
           <ReviewPage tab={tab} setTab={(nextTab) => go("review", nextTab)} />
@@ -182,6 +197,14 @@ export function GradTrackApp({
           />
         )}
       </main>
+      {showConsent && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="presentation">
+        <section className="card w-full max-w-lg p-6" role="dialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-description">
+          <h2 id="consent-title" className="text-xl font-bold">ขอความยินยอมในการใช้ AI</h2>
+          <p id="consent-description" className="mt-3 text-sm leading-6 text-slate-600">GradTrack จะส่งเอกสารการศึกษาที่คุณอัปโหลดไปยัง Gemini เพื่ออ่านและสกัดข้อมูลสำหรับสร้างแผนการเรียน โดยไฟล์ยังคงเก็บไว้ในพื้นที่ส่วนตัวของคุณ</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">ความยินยอมนี้ใช้กับการอัปโหลดทุกครั้งในพื้นที่ใช้งานนี้ และจะขอใหม่เมื่อพื้นที่ใช้งานหมดอายุหลังไม่ได้ใช้งานเป็นเวลานาน</p>
+          <button className="btn btn-primary mt-6 w-full disabled:cursor-wait disabled:opacity-60" type="button" disabled={savingConsent} onClick={() => void confirmConsent()}>{savingConsent ? "กำลังบันทึก…" : "ยินยอมและดำเนินการต่อ"}</button>
+        </section>
+      </div>}
     </div>
   );
 }
