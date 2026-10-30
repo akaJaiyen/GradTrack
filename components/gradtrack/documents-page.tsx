@@ -21,13 +21,13 @@ export function DocumentsPage({
 }) {
   type UploadRole = "study_plan" | "transcript";
   const [busyRoles, setBusyRoles] = useState<Set<UploadRole>>(() => new Set());
-  const [processingRoles, setProcessingRoles] = useState<Set<UploadRole>>(() => new Set());
-  const [retrying, setRetrying] = useState(false);
+  const [analysisRunning, setAnalysisRunning] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<Partial<Record<UploadRole, Doc>>>({});
   const studyPlan = uploadedDocs.study_plan || docs.find(doc => doc.type === "study_plan");
   const transcript = uploadedDocs.transcript || docs.find(doc => doc.type === "transcript");
   const isExtracting = studyPlan?.status === "extracting" || transcript?.status === "extracting";
-  const isProcessing = busyRoles.size > 0 || processingRoles.size > 0 || retrying || isExtracting;
+  const isProcessing = analysisRunning || isExtracting;
+  const isInteractionLocked = busyRoles.size > 0 || isProcessing;
   const processingSummary = summarizeAcademicDocumentProcessing(
     [studyPlan, transcript].filter((document): document is Doc => Boolean(document)),
     isProcessing,
@@ -42,47 +42,42 @@ export function DocumentsPage({
     if (!file) return;
     let uploadStored = false;
     setBusyRoles(current => new Set(current).add(role));
-    setProcessingRoles(current => { const next = new Set(current); next.delete(role); return next; });
     try {
       const prepared = await api("/api/documents", "POST", { type: role, fileName: file.name, mimeType: file.type, size: file.size });
       const put = await fetch(prepared.signedUrl, { method: "PUT", headers: { "content-type": prepared.mimeType || file.type }, body: file });
       if (!put.ok) throw new Error("อัปโหลดไฟล์ไม่สำเร็จ");
-      // The storage upload has completed, even if the following AI step fails.
-      // Keep this optimistic record so the user never sees the file disappear.
+      // Keep the stored file visible while the document list refreshes. AI is
+      // intentionally not called here; it starts only after both files exist.
       setUploadedDocs(current => ({
         ...current,
-        [role]: { id: prepared.documentId, type: role, file_name: file.name, status: "extracting", created_at: new Date().toISOString() },
+        [role]: { id: prepared.documentId, type: role, file_name: file.name, status: "uploaded", created_at: new Date().toISOString() },
       }));
       uploadStored = true;
-      setBusyRoles(current => { const next = new Set(current); next.delete(role); return next; });
-      setProcessingRoles(current => new Set(current).add(role));
-      await api("/api/academic-profile", "POST", { consent: true });
       await reload();
       setUploadedDocs({});
-      notice("อัปโหลดเอกสารสำเร็จแล้ว — AI กำลังอ่านข้อมูลเบื้องหลัง คุณไม่ต้องรอหน้านี้");
+      notice(`อัปโหลด ${role === "study_plan" ? "Study Plan" : "Transcript"} สำเร็จแล้ว — อัปโหลดอีกไฟล์ให้ครบก่อน แล้วกดเริ่มวิเคราะห์`);
     } catch (error) {
-      if (uploadStored) {
-        setUploadedDocs(current => current[role] ? { ...current, [role]: { ...current[role], status: "failed" } } : current);
-      }
+      if (!uploadStored) setUploadedDocs(current => { const next = { ...current }; delete next[role]; return next; });
       void reload();
-      notice(`อัปโหลด ${role === "study_plan" ? "Study Plan" : "Transcript"} สำเร็จ แต่ AI อ่านเอกสารไม่สำเร็จ: ${error instanceof Error ? error.message : "โปรดลองใหม่อีกครั้ง"}`);
+      notice(uploadStored
+        ? `อัปโหลด ${role === "study_plan" ? "Study Plan" : "Transcript"} สำเร็จ แต่ไม่สามารถรีเฟรชสถานะได้: ${error instanceof Error ? error.message : "โปรดลองใหม่อีกครั้ง"}`
+        : `อัปโหลด ${role === "study_plan" ? "Study Plan" : "Transcript"} ไม่สำเร็จ: ${error instanceof Error ? error.message : "โปรดลองใหม่อีกครั้ง"}`);
     } finally {
       setBusyRoles(current => { const next = new Set(current); next.delete(role); return next; });
-      setProcessingRoles(current => { const next = new Set(current); next.delete(role); return next; });
     }
   };
-  const retryAnalysis = async () => {
-    setRetrying(true);
+  const startAnalysis = async (retry = false) => {
+    setAnalysisRunning(true);
     try {
       await api("/api/academic-profile", "POST", { consent: true });
       await reload();
       setUploadedDocs({});
-      notice("เริ่มอ่านเอกสารด้วย AI อีกครั้งแล้ว — คุณไม่ต้องรอหน้านี้");
+      notice(retry ? "เริ่มประมวลผลเอกสารด้วย AI อีกครั้งแล้ว — คุณไม่ต้องรอหน้านี้" : "เริ่มวิเคราะห์เอกสารด้วย AI แล้ว — คุณไม่ต้องรอหน้านี้");
     } catch (error) {
       await reload();
-      notice(`AI ยังอ่านเอกสารไม่สำเร็จ: ${error instanceof Error ? error.message : "โปรดลองใหม่อีกครั้ง"}`);
+      notice(`เริ่มวิเคราะห์เอกสารไม่สำเร็จ: ${error instanceof Error ? error.message : "โปรดลองใหม่อีกครั้ง"}`);
     } finally {
-      setRetrying(false);
+      setAnalysisRunning(false);
     }
   };
   return (
@@ -90,16 +85,16 @@ export function DocumentsPage({
       <section className="card p-6">
         <Upload className="text-blue-600" />
         <h2 className="mt-4 font-bold">เอกสารสำหรับสร้างข้อมูลการเรียน</h2>
-        <p className="mt-2 text-sm text-slate-600">อัปโหลดแผนการศึกษากับผลการเรียนแยกกันได้ (PDF, JPG หรือ PNG ไม่เกิน 10 MB) ทุกครั้งที่อัปโหลดหรือแทนที่ไฟล์ ระบบจะอ่านและรวมเอกสารที่มีอยู่เพื่อสร้างข้อมูลการเรียนชุดเดียว</p>
+        <p className="mt-2 text-sm text-slate-600">อัปโหลดแผนการศึกษากับผลการเรียนให้ครบก่อน (PDF, JPG หรือ PNG ไม่เกิน 10 MB) แล้วกดเริ่มวิเคราะห์เพื่อให้ AI อ่านทั้งสองไฟล์พร้อมกัน</p>
         <section className="mt-5" aria-labelledby="document-files-title">
           <h3 id="document-files-title" className="font-semibold text-slate-900">ไฟล์เอกสาร</h3>
           <p className="mt-1 text-sm text-slate-600">จัดการไฟล์ต้นทางแยกตามประเภท การแทนที่ไฟล์หนึ่งจะไม่ลบอีกไฟล์</p>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <UploadSlot role="study_plan" title="Study Plan" description="แผนการศึกษาและวิชาที่ต้องเรียน" doc={studyPlan} disabled={isProcessing} active={busyRoles.has("study_plan")} upload={upload} />
-            <UploadSlot role="transcript" title="Transcript" description="ผลการเรียนและเกรดที่ได้รับ" doc={transcript} disabled={isProcessing} active={busyRoles.has("transcript")} upload={upload} />
+            <UploadSlot role="study_plan" title="Study Plan" description="แผนการศึกษาและวิชาที่ต้องเรียน" doc={studyPlan} disabled={isInteractionLocked} active={busyRoles.has("study_plan")} upload={upload} />
+            <UploadSlot role="transcript" title="Transcript" description="ผลการเรียนและเกรดที่ได้รับ" doc={transcript} disabled={isInteractionLocked} active={busyRoles.has("transcript")} upload={upload} />
           </div>
         </section>
-        <ProcessingStatus summary={processingSummary} busy={isProcessing} retry={retryAnalysis} />
+        <ProcessingStatus summary={processingSummary} busy={isInteractionLocked} start={startAnalysis} />
       </section>
     </>
   );
@@ -120,7 +115,7 @@ function UploadSlot({ role, title, description, doc, disabled, active, upload }:
   </section>;
 }
 
-function ProcessingStatus({ summary, busy, retry }: { summary: ReturnType<typeof summarizeAcademicDocumentProcessing>; busy: boolean; retry: () => Promise<void> }) {
+function ProcessingStatus({ summary, busy, start }: { summary: ReturnType<typeof summarizeAcademicDocumentProcessing>; busy: boolean; start: (retry?: boolean) => Promise<void> }) {
   const isProcessing = summary.state === "processing";
   const tone = summary.state === "retryable" ? "border-amber-200 bg-amber-50" : "border-blue-200 bg-blue-50";
   return <section className={`mt-5 rounded-lg border p-4 text-sm text-slate-700 ${tone}`} aria-labelledby="processing-title">
@@ -132,6 +127,7 @@ function ProcessingStatus({ summary, busy, retry }: { summary: ReturnType<typeof
         <p className="mt-1">{summary.description}</p>
       </div>
     </div>
-    {summary.canRetry && <button className="btn btn-primary mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void retry()}>ลองประมวลผลเอกสารอีกครั้ง</button>}
+    {summary.canStart && <button className="btn btn-primary mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void start()}>เริ่มวิเคราะห์เอกสาร</button>}
+    {summary.canRetry && <button className="btn btn-primary mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void start(true)}>ลองประมวลผลเอกสารอีกครั้ง</button>}
   </section>;
 }

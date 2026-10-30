@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FileText,
   GraduationCap,
@@ -53,31 +53,35 @@ export function GradTrackApp({
   const [showConsent, setShowConsent] = useState(false);
   const [savingConsent, setSavingConsent] = useState(false);
   const workspaceInitialized = useRef(false);
-  const load = async () => {
+  const reloadDocuments = useCallback(async () => {
+    const documents = await api("/api/documents");
+    setDocs(documents.data);
+  }, []);
+  const load = useCallback(async (initializeWorkspace = false) => {
     try {
-      const currentWorkspace = await api("/api/workspace", "POST");
-      if (currentWorkspace.demo) return;
-      const [documents, dashboard] = await Promise.all([
-        api("/api/documents"),
-        api("/api/dashboard"),
+      if (initializeWorkspace) {
+        const currentWorkspace = await api("/api/workspace", "POST");
+        if (currentWorkspace.demo) return;
+      }
+      const [documents, dashboard, consent] = await Promise.all([
+        api("/api/documents"), api("/api/dashboard"), api("/api/consent"),
       ]);
       setDocs(documents.data);
       setCourses(dashboard.courses.map(fromCourse));
       setRequirements(dashboard.requirements.map(fromRequirement));
       setWorkspace(true);
-      const consent = await api("/api/consent");
       setShowConsent(consent.consentVersion !== TYPHOON_CONSENT_VERSION);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "โหลดข้อมูลไม่สำเร็จ โปรดลองใหม่อีกครั้ง");
     }
-  };
+  }, []);
   useEffect(() => {
     // React Strict Mode invokes effects twice in development.  Creating two
     // anonymous workspaces races their cookies and causes intermittent 401s.
     if (workspaceInitialized.current) return;
     workspaceInitialized.current = true;
-    void load();
-  }, []);
+    void load(true);
+  }, [load]);
   const go = (nextView: View, nextTab?: Tab) => {
     if (
       view === "review" &&
@@ -177,7 +181,7 @@ export function GradTrackApp({
           </section>
         )}
         {view === "upload" && (
-          workspace ? <DocumentsPage docs={docs} reload={load} notice={setNotice} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
+          workspace ? <DocumentsPage docs={docs} reload={reloadDocuments} notice={setNotice} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
         )}
         {view === "review" && (
           <ReviewPage tab={tab} setTab={(nextTab) => go("review", nextTab)} />

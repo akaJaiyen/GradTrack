@@ -23,14 +23,15 @@ async function runOcrRequest<T>(request: () => Promise<T>): Promise<T> {
 }
 
 export type TyphoonStage = "typhoon_ocr" | "typhoon_text";
+export type TyphoonFailureKind = "configuration" | "network" | "provider_http" | "invalid_response" | "model_response";
 export class TyphoonRequestError extends Error {
-  constructor(message: string, readonly status: number, readonly stage: TyphoonStage) { super(message); }
+  constructor(message: string, readonly status: number, readonly stage: TyphoonStage, readonly failureKind: TyphoonFailureKind) { super(message); }
 }
 export const isTyphoonRateLimited = (error: unknown) => error instanceof TyphoonRequestError && error.status === 429;
 
 async function callTyphoon(model: string, messages: unknown[], stage: TyphoonStage, maxTokens: number) {
   const key = process.env.TYPHOON_API_KEY;
-  if (!key) throw new TyphoonRequestError("Typhoon API key is not configured", 0, stage);
+  if (!key) throw new TyphoonRequestError("Typhoon API key is not configured", 0, stage, "configuration");
   let last: Error = new Error("Typhoon request failed");
   for (let attempt = 0; attempt < 3; attempt += 1) {
     let response: Response;
@@ -41,7 +42,7 @@ async function callTyphoon(model: string, messages: unknown[], stage: TyphoonSta
         signal: AbortSignal.timeout(90_000),
       });
     } catch {
-      last = new TyphoonRequestError("Typhoon request failed", 502, stage);
+      last = new TyphoonRequestError("Typhoon request failed", 502, stage, "network");
       if (attempt === 2) throw last;
       await pause(process.env.NODE_ENV === "test" ? 0 : Math.max(stage === "typhoon_ocr" ? requestDelayMs : 0, 500 * 2 ** attempt));
       continue;
@@ -49,12 +50,12 @@ async function callTyphoon(model: string, messages: unknown[], stage: TyphoonSta
     if (response.ok) {
       let payload: { choices?: Array<{ message?: { content?: unknown } }> };
       try { payload = await response.json() as typeof payload; }
-      catch { throw new TyphoonRequestError("Typhoon returned an invalid response", 502, stage); }
+      catch { throw new TyphoonRequestError("Typhoon returned an invalid response", 502, stage, "invalid_response"); }
       const content = payload.choices?.[0]?.message?.content;
-      if (typeof content !== "string" || !content.trim()) throw new TyphoonRequestError("Typhoon returned empty content", 502, stage);
+      if (typeof content !== "string" || !content.trim()) throw new TyphoonRequestError("Typhoon returned empty content", 502, stage, "invalid_response");
       return content;
     }
-    last = new TyphoonRequestError(`Typhoon request failed (${response.status})`, response.status, stage);
+    last = new TyphoonRequestError(`Typhoon request failed (${response.status})`, response.status, stage, "provider_http");
     if (response.status === 429 || response.status < 500 || attempt === 2) throw last;
     await pause(process.env.NODE_ENV === "test" ? 0 : Math.max(stage === "typhoon_ocr" ? requestDelayMs : 0, 500 * 2 ** attempt));
   }
@@ -120,9 +121,9 @@ export async function extractTyphoonProfile(input: { text: string; sourceDocumen
     const raw = await callTyphoon(model, [{ role: "system", content: "You extract structured academic records. Return valid JSON only." }, { role: "user", content: `${prompt}\n\nOCR Markdown:\n${parts[i]}` }], "typhoon_text", 4_096);
     let parsed: unknown;
     try { parsed = JSON.parse(raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "")); }
-    catch { throw new TyphoonRequestError("Typhoon text response was not valid JSON", 502, "typhoon_text"); }
+    catch { throw new TyphoonRequestError("Typhoon text response was not valid JSON", 502, "typhoon_text", "model_response"); }
     const result = normalizeAcademicPayload(parsed, input.sourceDocumentId);
-    if (!result.success) throw new TyphoonRequestError("Typhoon text response did not match the academic schema", 502, "typhoon_text");
+    if (!result.success) throw new TyphoonRequestError("Typhoon text response did not match the academic schema", 502, "typhoon_text", "model_response");
     outputs.push(result.data);
   }
   if (outputs.length === 1) return outputs[0];
@@ -132,6 +133,6 @@ export async function extractTyphoonProfile(input: { text: string; sourceDocumen
     catalogCourses: outputs.flatMap(x => x.catalogCourses), completedCourses: outputs.flatMap(x => x.completedCourses),
     unresolvedCourses: outputs.flatMap(x => x.unresolvedCourses), evidence: outputs.flatMap(x => x.evidence), warnings: outputs.flatMap(x => x.warnings), detectedKind: outputs[0].sources[0]?.detectedKind,
   }, input.sourceDocumentId);
-  if (!merged.success) throw new TyphoonRequestError("Typhoon merged output did not match the academic schema", 502, "typhoon_text");
+  if (!merged.success) throw new TyphoonRequestError("Typhoon merged output did not match the academic schema", 502, "typhoon_text", "model_response");
   return merged.data;
 }

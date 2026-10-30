@@ -23,6 +23,7 @@ GradTrack คือเว็บติดตามแผนและความ�
 - Stack: Next.js 15 App Router, React 19, TypeScript และ Tailwind CSS
 - ฐานข้อมูล/ไฟล์: Supabase และ private bucket ชื่อ `private-documents`
 - AI extraction: ใช้ Typhoon OCR อ่านไฟล์ต้นฉบับและ Typhoon text model สกัดข้อมูล เฉพาะฝั่งเซิร์ฟเวอร์หลังได้รับ consent เวอร์ชันปัจจุบันจากผู้ใช้
+- การวิเคราะห์ข้อมูลการเรียนต้องรอให้ผู้ใช้อัปโหลดทั้ง Study Plan และ Transcript ครบก่อน แล้วผู้ใช้จึงกดเริ่มวิเคราะห์ครั้งเดียว; ห้ามเรียก AI อัตโนมัติหลังอัปโหลดเพียงไฟล์เดียว
 - UI หลักใช้ภาษาไทย (`<html lang="th">`) และมี routing ตาม locale ใน `app/[locale]`
 - แอปทำงานแบบ demo ได้เมื่อยังไม่ได้ตั้งค่า Supabase
 

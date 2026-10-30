@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { error, unavailable } from "@/lib/api";
 import { mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
-import { extractTyphoonProfile, isTyphoonRateLimited, renderPdfPages, typhoonOcrPages } from "@/lib/typhoon";
+import { extractTyphoonProfile, isTyphoonRateLimited, renderPdfPages, TyphoonRequestError, typhoonOcrPages } from "@/lib/typhoon";
 import { normalizedCourseCode } from "@/lib/extraction";
 import { documentExtractionErrorCode, type DocumentExtractionErrorCode, type ExtractionStage } from "@/lib/document-extraction-error";
 import { workspaceContext } from "@/lib/server-workspace";
@@ -46,6 +46,9 @@ export async function POST(request: Request) {
   // New role-aware uploads take precedence. Existing academic_source rows are
   // retained as a backwards-compatible source until the user replaces them.
   const modernDocuments = availableDocuments?.filter(document => document.type === "study_plan" || document.type === "transcript") || [];
+  if (modernDocuments.length && new Set(modernDocuments.map(document => document.type)).size < 2) {
+    return error("Upload both Study Plan and Transcript before starting analysis", 409);
+  }
   const documents = modernDocuments.length ? modernDocuments : availableDocuments?.filter(document => document.type === "academic_source") || [];
   if (!documents.length) return error("Upload a Study Plan or Transcript first", 404);
   await db.from("documents").update({ status: "extracting", extraction_error: null }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
@@ -74,7 +77,7 @@ export async function POST(request: Request) {
       } catch (caught) {
         const error = caught instanceof Error ? caught : new Error("Could not read uploaded document");
         const errorCode = documentExtractionErrorCode(error, stage);
-        console.error("Document extraction failed", { stage, errorCode, httpStatus: "status" in error ? error.status : undefined });
+        console.error("Document extraction failed", { stage, errorCode, httpStatus: "status" in error ? error.status : undefined, failureKind: error instanceof TyphoonRequestError ? error.failureKind : undefined });
         extractionAttempts.push({ document, error, errorCode });
         if (isTyphoonRateLimited(error)) break;
       }
@@ -111,7 +114,7 @@ export async function POST(request: Request) {
     } catch (caught) {
       const errorCode = documentExtractionErrorCode(caught, stage);
       const httpStatus = caught && typeof caught === "object" && "status" in caught ? (caught as { status?: unknown }).status : undefined;
-      console.error("Academic profile extraction failed", { stage, errorCode, httpStatus });
+      console.error("Academic profile extraction failed", { stage, errorCode, httpStatus, failureKind: caught instanceof TyphoonRequestError ? caught.failureKind : undefined });
       if (!extractionFailedIds.length) await db.from("documents").update({ status: "failed", extraction_error: errorCode }).in("id", documents.map(document => document.id)).eq("workspace_id", workspaceId);
     }
   });

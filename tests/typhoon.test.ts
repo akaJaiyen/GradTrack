@@ -47,6 +47,13 @@ describe("Typhoon document pipeline adapter", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(typhoonOcrPages(["image"])).rejects.toBeInstanceOf(TyphoonRequestError);
     expect(fetchMock).toHaveBeenCalledTimes(status === 503 ? 3 : 1);
+    if (status === 503) await expect(typhoonOcrPages(["image"])).rejects.toMatchObject({ failureKind: "provider_http" });
+  });
+
+  it("marks network failures separately from HTTP failures without exposing request data", async () => {
+    vi.stubEnv("TYPHOON_API_KEY", "test-key");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("socket error")));
+    await expect(typhoonOcrPages(["image"])).rejects.toMatchObject({ status: 502, failureKind: "network" });
   });
 
   it("merges results when OCR text is split into chunks", async () => {

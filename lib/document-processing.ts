@@ -9,9 +9,10 @@ export type DocumentProcessingSummary = {
   documentCount: number;
   documentNames: string[];
   documentList: string;
-  state: "empty" | "processing" | "retryable" | "complete";
+  state: "empty" | "awaiting_documents" | "ready_to_process" | "processing" | "retryable" | "complete";
   title: string;
   description: string;
+  canStart: boolean;
   canRetry: boolean;
 };
 
@@ -47,7 +48,21 @@ export function summarizeAcademicDocumentProcessing(
       documentList,
       state: "empty",
       title: "ยังไม่มีเอกสารสำหรับประมวลผล",
-      description: "อัปโหลด Study Plan หรือ Transcript เพื่อเริ่มสร้างข้อมูลการเรียน",
+      description: "อัปโหลด Study Plan และ Transcript ให้ครบก่อนเริ่มวิเคราะห์ข้อมูลการเรียน",
+      canStart: false,
+      canRetry: false,
+    };
+  }
+
+  if (roles.length < 2) {
+    return {
+      documentCount: roles.length,
+      documentNames,
+      documentList,
+      state: "awaiting_documents",
+      title: "รออัปโหลดเอกสารอีก 1 รายการ",
+      description: `อัปโหลด ${roles[0] === "study_plan" ? "Transcript" : "Study Plan"} เพิ่มก่อน แล้วจึงเริ่มวิเคราะห์ ${documentList} พร้อมกัน`,
+      canStart: false,
       canRetry: false,
     };
   }
@@ -60,6 +75,7 @@ export function summarizeAcademicDocumentProcessing(
       state: "processing",
       title: "กำลังประมวลผลข้อมูลการเรียน",
       description: `AI กำลังอ่านและรวมข้อมูลจาก ${documentList} คุณสามารถออกจากหน้านี้หรือทำงานส่วนอื่นต่อได้`,
+      canStart: false,
       canRetry: false,
     };
   }
@@ -76,7 +92,21 @@ export function summarizeAcademicDocumentProcessing(
       description: hasRateLimit
         ? "Typhoon จำกัดจำนวนคำขอชั่วคราว โปรดลองประมวลผลอีกครั้งภายหลัง"
         : `มีเอกสารบางไฟล์อ่านไม่สำเร็จ โปรดลองประมวลผล ${documentList} อีกครั้ง`,
+      canStart: false,
       canRetry: true,
+    };
+  }
+
+  if (documents.some(document => document.status === "uploaded")) {
+    return {
+      documentCount: roles.length,
+      documentNames,
+      documentList,
+      state: "ready_to_process",
+      title: "เอกสารพร้อมวิเคราะห์",
+      description: `ระบบจะส่ง ${documentList} ให้ AI พร้อมกันเมื่อคุณกดเริ่มวิเคราะห์`,
+      canStart: true,
+      canRetry: false,
     };
   }
 
@@ -87,6 +117,7 @@ export function summarizeAcademicDocumentProcessing(
     state: "complete",
     title: "ข้อมูลการเรียนพร้อมตรวจสอบ",
     description: `ระบบประมวลผล ${documentList} แล้ว คุณสามารถไปตรวจสอบข้อมูลก่อนนำไปใช้วางแผนการเรียน`,
+    canStart: false,
     canRetry: false,
   };
 }
