@@ -132,8 +132,13 @@ function StudentTermReview({ courses, reload }: { courses: Course[]; reload: () 
       const termGpa = term.summary.gradedCredits ? term.summary.gpa.toFixed(2) : "—";
       const cumulativeGpa = term.cumulative.gradedCredits ? term.cumulative.gpa.toFixed(2) : "—";
       return <section className="card overflow-hidden" key={term.key}>
-        <button aria-controls={`term-${term.key}`} aria-expanded={isOpen} className="flex min-h-14 w-full items-center justify-between gap-3 p-4 text-left hover:bg-blue-50 focus-visible:outline focus-visible:outline-3 focus-visible:outline-blue-400" type="button" onClick={() => toggle(term.key)}>
-          <span><span className="block font-bold">{term.label}</span><span className="mt-1 block text-sm text-slate-600">ผ่าน {term.summary.passedCredits} หน่วยกิต · GPA {termGpa} · GPA สะสม {cumulativeGpa}</span></span>
+        <button aria-controls={`term-${term.key}`} aria-expanded={isOpen} className="flex min-h-14 w-full flex-wrap items-center gap-3 px-3 py-2 text-left hover:bg-blue-50 focus-visible:outline focus-visible:outline-3 focus-visible:outline-blue-400" type="button" onClick={() => toggle(term.key)}>
+          <span className="min-w-[10rem] flex-1 font-bold">{term.label}</span>
+          <span className="order-3 grid basis-full grid-cols-3 divide-x divide-blue-100 overflow-hidden rounded-md border border-blue-100 bg-blue-50 text-center sm:order-none sm:basis-auto sm:min-w-[22rem]">
+            <span className="px-2 py-1"><span className="block text-xs font-normal text-slate-600">หน่วยกิตผ่าน</span><span className="block tabular-nums text-sm font-bold">{term.summary.passedCredits}</span></span>
+            <span className="px-2 py-1"><span className="block text-xs font-normal text-slate-600">GPA เทอม</span><span className="block tabular-nums text-sm font-bold">{termGpa}</span></span>
+            <span className="px-2 py-1"><span className="block text-xs font-normal text-slate-600">GPA สะสม</span><span className="block tabular-nums text-sm font-bold">{cumulativeGpa}</span></span>
+          </span>
           <ChevronDown aria-hidden="true" className={`shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
         </button>
         {isOpen ? <div id={`term-${term.key}`} className="border-t">
