@@ -164,7 +164,7 @@ export function GradTrackApp({
           workspace ? <DocumentsPage docs={docs} reload={load} notice={setNotice} go={go} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
         )}
         {view === "review" && (
-          <ReviewPage />
+          <ReviewPage tab={tab} setTab={(nextTab) => go("review", nextTab)} />
         )}
         {view === "matching" && (
           <section className="card p-6">

@@ -2,23 +2,41 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import type { AcademicProfileExtraction } from "@/lib/extraction";
+import type { RequiredCourseProgress } from "@/lib/academic-progress";
 import { api } from "./shared";
+import type { Tab } from "./shared";
 
-export function AcademicProfileReview() {
+type Progress = { totalCredits: number | null; passedCredits: number; required: RequiredCourseProgress[]; passedRequired: number; pendingConfirmations: number };
+
+export function AcademicProfileReview({ tab }: { tab: Tab }) {
   const [profile, setProfile] = useState<AcademicProfileExtraction | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { void api("/api/academic-profile").then(result => setProfile(result.data?.extraction_json || null)).catch(() => setError("ไม่สามารถโหลด academic profile ได้")); }, []);
+  const load = () => api("/api/academic-profile").then(result => { setProfile(result.data?.extraction_json || null); setProgress(result.progress || null); }).catch(() => setError("ไม่สามารถโหลด academic profile ได้"));
+  useEffect(() => { void load(); }, []);
   if (error) return <p className="text-sm text-red-700" role="alert">{error}</p>;
   if (!profile) return <section className="card p-6"><h2 className="font-bold">ยังไม่มีข้อมูลที่ AI อ่านแล้ว</h2><p className="mt-2 text-sm text-slate-600">อัปโหลดเอกสารหลักสูตร, รายวิชา หรือ Transcript จากหน้าเอกสารของฉัน</p></section>;
   const evidence = (path: string) => profile.evidence.find(item => item.path === path);
+  if (tab === "student") return <div className="space-y-5">
+    <ProfileTable title="ผลการเรียน" headers={["รหัส", "ชื่อรายวิชา", "หน่วยกิต", "เกรด", "เทอม"]} rows={profile.completedCourses.map(course => [course.code, course.name, course.credits, course.grade || "—", [course.term, course.academicYear].filter(Boolean).join("/") || "—"])} />
+  </div>;
   return <div className="space-y-5">
     <section className="card p-5"><h2 className="font-bold">{profile.profile.program || "Academic profile"}</h2><p className="mt-1 text-sm text-slate-600">{[profile.profile.institution, profile.profile.curriculumYear, profile.profile.degreeLevel].filter(Boolean).join(" · ")}</p>{profile.warnings.length > 0 && <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-800">พบ {profile.warnings.length} รายการที่ควรตรวจสอบ</p>}</section>
+    {progress && <section className="grid gap-3 sm:grid-cols-3"><Metric label="วิชาบังคับที่ผ่าน" value={`${progress.passedRequired}/${progress.required.length}`} /><Metric label="หน่วยกิตผ่านแล้ว" value={progress.totalCredits === null ? `${progress.passedCredits} (ยังไม่ระบุเป้าหมาย)` : `${progress.passedCredits}/${progress.totalCredits}`} /><Metric label="รอยืนยันจากชื่อวิชา" value={String(progress.pendingConfirmations)} /></section>}
+    {progress && <RequiredCoursesTable rows={progress.required} refresh={load} />}
     <ProfileTable title="โครงสร้างและหน่วยกิต" headers={["หมวด", "ขั้นต่ำ (หน่วยกิต)", "หลักฐาน"]} rows={profile.curriculum.requirementGroups.filter(group => group.kind !== "container").map(group => [group.name, group.minimumCredits ?? "—", <Evidence key={group.id} item={evidence(`curriculum.requirementGroups.${group.id}`)} />])} />
     <ProfileTable title="รายวิชาในหลักสูตร" headers={["รหัส", "ชื่อรายวิชา", "หน่วยกิต", "Prerequisite"]} rows={profile.catalogCourses.map(course => [course.code, course.nameTh || course.nameEn || "—", course.credits ?? "—", course.prerequisiteCodes.join(", ") || "—"])} />
-    <ProfileTable title="ผลการเรียน" headers={["รหัส", "ชื่อรายวิชา", "หน่วยกิต", "เกรด", "เทอม"]} rows={profile.completedCourses.map(course => [course.code, course.name, course.credits, course.grade || "—", [course.term, course.academicYear].filter(Boolean).join("/") || "—"])} />
     {profile.unresolvedCourses.length > 0 && <ProfileTable title="รายการที่ AI ระบุรหัสวิชาไม่ได้" headers={["ข้อความต้นทาง", "เหตุผล"]} rows={profile.unresolvedCourses.map(course => [course.sourceText, course.reason])} />}
     {profile.warnings.length > 0 && <section className="card p-5"><h2 className="font-bold">คำเตือน</h2><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-800">{profile.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></section>}
   </div>;
+}
+
+function Metric({ label, value }: { label: string; value: string }) { return <section className="card p-4"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></section>; }
+const statusLabel: Record<RequiredCourseProgress["status"], string> = { passed: "ผ่านแล้ว", not_passed: "พบวิชา แต่เกรดไม่ผ่าน", missing: "ยังไม่พบใน Transcript", needs_confirmation: "รอยืนยันการจับคู่" };
+function RequiredCoursesTable({ rows, refresh }: { rows: RequiredCourseProgress[]; refresh: () => Promise<unknown> }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  async function confirm(requirementId: string, courseId: string) { setBusy(`${requirementId}:${courseId}`); try { await api("/api/matches", "POST", { courseId, requirementId, matchType: "manual", confidence: 1, status: "confirmed" }); await refresh(); } finally { setBusy(null); } }
+  return <section className="card overflow-x-auto"><h2 className="p-5 font-bold">ตรวจวิชาบังคับจาก Study Plan</h2><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">รหัส</th><th className="px-5 py-3 font-medium">ชื่อวิชา</th><th className="px-5 py-3 font-medium">หน่วยกิต</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">การจับคู่</th></tr></thead><tbody>{rows.length ? rows.map(row => <tr className="border-t" key={row.requirementId}><td className="px-5 py-3">{row.code || "—"}</td><td className="px-5 py-3">{row.name || "—"}</td><td className="px-5 py-3">{row.credits ?? "—"}</td><td className="px-5 py-3">{statusLabel[row.status]}</td><td className="px-5 py-3">{row.status === "needs_confirmation" ? <div className="grid gap-2">{row.candidates.map(candidate => <button className="text-left text-blue-700 underline disabled:text-slate-400" disabled={busy !== null} key={candidate.id} onClick={() => void confirm(row.requirementId, candidate.id)}>ยืนยัน {candidate.code} — {candidate.name} ({Math.round(candidate.score * 100)}%)</button>)}</div> : row.candidates[0] ? `${row.candidates[0].code} — ${row.candidates[0].name}` : "—"}</td></tr>) : <tr><td className="px-5 py-4 text-slate-500" colSpan={5}>ไม่พบวิชาบังคับที่ระบุได้ใน Study Plan</td></tr>}</tbody></table></section>;
 }
 
 function Evidence({ item }: { item: AcademicProfileExtraction["evidence"][number] | undefined }) { return item ? <span title={item.text} className="text-xs text-slate-500">หน้า {item.page || "—"}: {item.text}</span> : <span className="text-xs text-slate-400">—</span>; }
