@@ -1,4 +1,5 @@
 import { academicProfileExtractionSchema } from "@/lib/extraction";
+import { normalizeAcademicTermAndYear } from "@/lib/academic-term";
 
 /** Accept harmless snake_case aliases from model output, then validate one canonical shape. */
 export function normalizeAcademicPayload(raw: unknown, sourceDocumentId: string) {
@@ -32,7 +33,11 @@ export function normalizeAcademicPayload(raw: unknown, sourceDocumentId: string)
     evidencePath: requiredText(course?.evidencePath ?? course?.evidence_path, 1, 500) || `curriculum.requiredCourses.${index}`,
   });
   const mapCatalog = (course: any) => ({ code: requiredText(course?.code ?? course?.courseCode ?? course?.course_code, 2, 40), nameTh: text(course?.nameTh ?? course?.name_th), nameEn: text(course?.nameEn ?? course?.name_en ?? course?.name), credits: number(course?.credits, 0.00001, 99), prerequisiteCodes: strings(course?.prerequisiteCodes ?? course?.prerequisite_codes, 2, 40, 50), requirementGroupIds: strings(course?.requirementGroupIds ?? course?.requirement_group_ids, 1, 100, 30) });
-  const mapCompleted = (course: any) => ({ code: requiredText(course?.code ?? course?.courseCode ?? course?.course_code, 2, 40), name: requiredText(course?.name ?? course?.nameTh ?? course?.name_th ?? course?.nameEn ?? course?.name_en, 1, 250), credits: number(course?.credits, 0.00001, 99), grade: grade(course?.grade), term: text(course?.term, 80), academicYear: number(course?.academicYear ?? course?.academic_year, 1900, 3000) });
+  const mapCompleted = (course: any) => {
+    const academicYear = number(course?.academicYear ?? course?.academic_year, 1900, 3000);
+    const normalizedTerm = normalizeAcademicTermAndYear(course?.term, academicYear);
+    return { code: requiredText(course?.code ?? course?.courseCode ?? course?.course_code, 2, 40), name: requiredText(course?.name ?? course?.nameTh ?? course?.name_th ?? course?.nameEn ?? course?.name_en, 1, 250), credits: number(course?.credits, 0.00001, 99), grade: grade(course?.grade), term: normalizedTerm.term, academicYear: normalizedTerm.academicYear };
+  };
   const catalogCourses = (Array.isArray(value.catalogCourses ?? value.catalog_courses) ? value.catalogCourses ?? value.catalog_courses : []).map(mapCatalog).filter((course: ReturnType<typeof mapCatalog>) => Boolean(course.code));
   const completedCourses = (Array.isArray(value.completedCourses ?? value.completed_courses) ? value.completedCourses ?? value.completed_courses : []).map(mapCompleted).filter((course: ReturnType<typeof mapCompleted>) => Boolean(course.code && course.name && course.credits));
   const requiredCourses = rawRequiredCourses.map(mapRequired).filter((course: ReturnType<typeof mapRequired>) => Boolean(course.code || course.nameTh || course.nameEn));

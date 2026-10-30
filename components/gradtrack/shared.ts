@@ -1,4 +1,5 @@
 import type { Course, Grade, Requirement } from "@/lib/types";
+import { normalizeAcademicTerm } from "@/lib/academic-term";
 
 export type View =
   | "overview"
@@ -61,7 +62,7 @@ export const fromCourse = (value: any): Course => ({
   nameTh: value.name_th || "",
   credits: Number(value.credits),
   grade: value.grade || undefined,
-  term: value.term || undefined,
+  term: normalizeAcademicTerm(value.term) || undefined,
   year: value.year === null || value.year === undefined ? undefined : Number(value.year),
   verified: value.verified_by_user ?? undefined,
 });

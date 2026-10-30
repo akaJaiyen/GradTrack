@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { academicTerms } from "@/lib/academic-term";
 
 export const gradeSchema = z.enum(["A", "B+", "B", "C+", "C", "D+", "D", "F", "P", "S", "W", "I", "N"]);
 export const extractedCourseSchema = z.object({
@@ -84,7 +85,7 @@ export const academicProfileExtractionSchema = z.object({
     name: z.string().trim().min(1).max(250),
     credits: z.number().positive().max(99),
     grade: gradeSchema.nullable().default(null),
-    term: z.string().trim().max(80).nullable().default(null),
+    term: z.enum(academicTerms).nullable().default(null),
     academicYear: z.number().int().min(1900).max(3000).nullable().default(null),
   })).max(1000).default([]),
   unresolvedCourses: z.array(z.object({

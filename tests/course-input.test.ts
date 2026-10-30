@@ -7,6 +7,7 @@ describe("course input validation", () => {
   });
   it("rejects invalid academic years and empty updates", () => {
     expect(courseInputSchema.safeParse({ code: "CS101", credits: 3, year: 1800 }).success).toBe(false);
+    expect(courseInputSchema.safeParse({ code: "CS101", credits: 3, term: "First Semester" }).success).toBe(false);
     expect(courseUpdateSchema.safeParse({}).success).toBe(false);
   });
 });

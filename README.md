@@ -7,8 +7,10 @@ npm install
 npm run dev
 ```
 
-The UI runs in demo mode without Supabase. For the unified academic-profile workflow, apply every migration in order through `0009_reset_confirmed_courses_on_reanalysis.sql` and add `TYPHOON_API_KEY` to `.env.local`. Uploaded academic PDFs and images are sent from the server to Typhoon only after the user has granted consent; the API key is never exposed to the browser.
+The UI runs in demo mode without Supabase. For the unified academic-profile workflow, apply every migration in order through `0010_canonical_academic_terms.sql` and add `TYPHOON_API_KEY` to `.env.local`. Uploaded academic PDFs and images are sent from the server to Typhoon only after the user has granted consent; the API key is never exposed to the browser.
 
 ## Transcript review policy
 
 Users review and edit transcript courses by academic year and term. Their confirmed course rows are the source used for progress and GPA displays; the original AI/OCR profile remains stored separately for traceability. Starting a new analysis intentionally replaces the complete course set, so the new result must be reviewed and confirmed again.
+
+Academic terms are limited to `1`, `2`, `3`, and `summer`. AI output and legacy labels are normalized to those values; unrecognized terms remain unset for the user to select during review. Results are displayed with the newest academic year and term first.

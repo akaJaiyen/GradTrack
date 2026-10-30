@@ -1,33 +1,32 @@
 import { gradeSummary } from "@/lib/academic";
+import { academicTermLabels, academicTermRank, normalizeAcademicTerm, type AcademicTerm } from "@/lib/academic-term";
 import type { Course } from "@/lib/types";
 
 export type TermSummary = ReturnType<typeof gradeSummary>;
 export type CourseTermGroup = {
   key: string;
   label: string;
-  term: string | null;
+  term: AcademicTerm | null;
   year: number | null;
   courses: Course[];
   summary: TermSummary;
   cumulative: TermSummary;
 };
 
-const unassigned = (course: { term?: string | null; year?: number | null }) => !course.term && !course.year;
+const unassigned = (course: { term?: string | null }) => !course.term;
 
 function compareTerms(left: Pick<CourseTermGroup, "term" | "year">, right: Pick<CourseTermGroup, "term" | "year">) {
-  if (unassigned(left)) return -1;
-  if (unassigned(right)) return 1;
+  if (unassigned(left) && unassigned(right)) return (left.year || 0) - (right.year || 0);
+  if (unassigned(left)) return 1;
+  if (unassigned(right)) return -1;
   if (left.year !== right.year) return (left.year || 0) - (right.year || 0);
-  const leftNumber = Number(left.term);
-  const rightNumber = Number(right.term);
-  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) return leftNumber - rightNumber;
-  return (left.term || "").localeCompare(right.term || "", "th");
+  return academicTermRank[left.term!] - academicTermRank[right.term!];
 }
 
 export function groupCoursesByTerm(courses: Course[]): CourseTermGroup[] {
   const grouped = new Map<string, Omit<CourseTermGroup, "summary" | "cumulative">>();
   for (const course of courses) {
-    const term = course.term?.trim() || null;
+    const term = normalizeAcademicTerm(course.term);
     const year = course.year ?? null;
     const key = `${year ?? "unknown"}:${term ?? "unknown"}`;
     const existing = grouped.get(key);
@@ -36,7 +35,7 @@ export function groupCoursesByTerm(courses: Course[]): CourseTermGroup[] {
       key,
       term,
       year,
-      label: term || year ? [year ? `ปีการศึกษา ${year}` : null, term ? `เทอม ${term}` : null].filter(Boolean).join(" · ") : "ไม่ระบุเทอม",
+      label: year ? `ปีการศึกษา ${year} · ${term ? academicTermLabels[term] : "ไม่ระบุเทอม"}` : term ? academicTermLabels[term] : "ไม่ระบุเทอม",
       courses: [course],
     });
   }
@@ -45,8 +44,10 @@ export function groupCoursesByTerm(courses: Course[]): CourseTermGroup[] {
     .map((group) => ({ ...group, summary: gradeSummary(group.courses) }))
     .sort(compareTerms);
   let cumulativeCourses: Course[] = [];
-  return terms.map((group) => {
+  const chronological = terms.map((group) => {
     cumulativeCourses = [...cumulativeCourses, ...group.courses];
     return { ...group, cumulative: gradeSummary(cumulativeCourses) };
   });
+  const unassignedTerms = chronological.filter(unassigned).reverse();
+  return [...chronological.filter(group => !unassigned(group)).reverse(), ...unassignedTerms];
 }

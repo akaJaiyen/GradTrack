@@ -5,6 +5,7 @@ import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import type { AcademicProfileExtraction } from "@/lib/extraction";
 import type { RequiredCourseProgress } from "@/lib/academic-progress";
 import { groupCoursesByTerm } from "@/lib/course-term-summary";
+import { academicTermLabels, academicTerms } from "@/lib/academic-term";
 import type { Course } from "@/lib/types";
 import { api, coursePayload, fromCourse, grades } from "./shared";
 import type { Tab } from "./shared";
@@ -61,7 +62,7 @@ function StudentTermReview({ courses, reload }: { courses: Course[]; reload: () 
   useEffect(() => {
     if (!initialized.current && terms.length) {
       initialized.current = true;
-      setOpenTerms(new Set([terms[terms.length - 1].key]));
+      setOpenTerms(new Set([terms[0].key]));
     }
   }, [terms]);
 
@@ -160,7 +161,8 @@ function CourseInput({ course, field, errors, onChange }: { course: Course; fiel
   const className = `min-h-10 w-full rounded border bg-white px-2 text-sm md:min-h-9 ${error ? "border-red-500" : "border-slate-300"}`;
   const label = { code: "รหัสวิชา", nameTh: "ชื่อรายวิชา", credits: "หน่วยกิต", grade: "เกรด", term: "เทอม", year: "ปีการศึกษา" }[field];
   if (field === "grade") return <select aria-label={label} className={className} value={course.grade || ""} onChange={(event) => onChange(course.id, field, event.target.value || undefined)}>{["", ...grades].map((grade) => <option key={grade} value={grade}>{grade || "—"}</option>)}</select>;
-  if (field === "term" || field === "year") return <DeferredCourseInput className={className} course={course} error={error} field={field} label={label} onChange={onChange} />;
+  if (field === "term") return <select aria-label={label} className={className} value={course.term || ""} onChange={(event) => onChange(course.id, field, event.target.value || undefined)}><option value="">ไม่ระบุ</option>{academicTerms.map((term) => <option key={term} value={term}>{academicTermLabels[term]}</option>)}</select>;
+  if (field === "year") return <DeferredCourseInput className={className} course={course} error={error} field={field} label={label} onChange={onChange} />;
   const type = field === "credits" ? "number" : "text";
   const value = course[field] ?? "";
   return <><input aria-invalid={Boolean(error)} aria-label={label} className={className} min={field === "credits" ? ".5" : undefined} step={field === "credits" ? ".5" : undefined} type={type} value={value} onChange={(event) => onChange(course.id, field, field === "credits" ? (event.target.value === "" ? undefined : Number(event.target.value)) : event.target.value)} />{error ? <span className="mt-1 block text-xs text-red-700">{error}</span> : null}</>;

@@ -26,7 +26,7 @@ Use exactly this camelCase shape (all top-level keys are required):
 Each requirementGroups row: {"id":"short-id","parentId":null,"name":"...","kind":"total|container|required_bucket|elective_bucket|credit_bucket","minimumCredits":null,"requiredCourseCodes":[]}.
 Each curriculum.requiredCourses row: {"id":"stable-short-id","groupId":null,"code":null,"nameTh":null,"nameEn":null,"credits":null,"evidencePath":"curriculum.requiredCourses.0"}. A row needs a course code or at least one name.
 Each catalogCourses row: {"code":"...","nameTh":null,"nameEn":null,"credits":null,"prerequisiteCodes":[],"requirementGroupIds":[]}.
-Each completedCourses row: {"code":"...","name":"...","credits":3,"grade":null,"term":null,"academicYear":null}.
+Each completedCourses row: {"code":"...","name":"...","credits":3,"grade":null,"term":null,"academicYear":null}. For completed rows, term must be exactly "1", "2", "3", "summer", or null; put a numeric year only in academicYear and never embed it in term.
 Each evidence row: {"path":"...","sourceDocumentId":"SOURCE_ID","page":null,"text":"exact excerpt","confidence":0.0}.`;
 
 type GeminiExtractionInput = {
