@@ -6,8 +6,8 @@ import type { AcademicProfileExtraction } from "@/lib/extraction";
 import { groupCoursesByTerm } from "@/lib/course-term-summary";
 import { academicTermLabels, academicTerms } from "@/lib/academic-term";
 import type { Course } from "@/lib/types";
-import { api, coursePayload, fromCourse, grades } from "./shared";
-import type { Tab } from "./shared";
+import { coursePayload, fromCourse, grades, type Tab } from "../shared/academic";
+import { api } from "../shared/api";
 
 type TranscriptDraft = { id: string; code: string; name: string; credits: number | string; grade: Course["grade"] | null; term: Course["term"] | null; year: number | null; status: "ready" | "needs_review"; parser: "ku_pdf" | "ai"; evidence: { page: number; rowText: string; termHeader: string } };
 

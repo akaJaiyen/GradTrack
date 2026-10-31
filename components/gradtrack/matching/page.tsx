@@ -1,55 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, ChevronDown, CircleAlert, Link2, RefreshCw, RotateCcw, Search, X, XCircle } from "lucide-react";
-import { api } from "./shared";
+import { CheckCircle2, ChevronDown, CircleAlert, Link2, RefreshCw, RotateCcw, Search, X } from "lucide-react";
+import { api } from "../shared/api";
+import { StatusBadge } from "./status-badge";
+import type { Candidate, ElectiveCategory, MatchableRequirement, MatchingApiResponse, MatchingData, MatchStatus, RequiredCourse } from "./types";
 
-type MatchStatus = "passed" | "not_passed" | "missing" | "needs_confirmation";
-type Candidate = { id: string; code: string; name: string; score: number; grade: string | null };
-type RequiredCourse = {
-  requirementId: string;
-  category: string;
-  code: string | null;
-  name: string | null;
-  credits: number | null;
-  status: MatchStatus;
-  candidates: Candidate[];
-};
-type ElectiveCategory = {
-  requirementIds: string[];
-  category: string;
-  requiredCredits: number;
-  passedCredits: number;
-  status: "complete" | "in_progress" | "empty";
-  matchedCourses: Array<Candidate & { credits: number }>;
-};
-type MatchableRequirement = Pick<RequiredCourse, "requirementId">;
-type MatchingData = {
-  courses: Candidate[];
-  progress: {
-    totalCredits: number | null;
-    passedCredits: number;
-    passedRequired: number;
-    pendingConfirmations: number;
-    required: RequiredCourse[];
-    electives: ElectiveCategory[];
-  };
-};
-type MatchingApiResponse = Omit<MatchingData, "courses"> & {
-  courses: Array<{ id: string; code: string; name_th: string | null; grade: string | null }>;
-};
-
-const statusDetails: Record<MatchStatus, { label: string; className: string; Icon: typeof CheckCircle2 }> = {
-  passed: { label: "ผ่านแล้ว", className: "ok", Icon: CheckCircle2 },
-  needs_confirmation: { label: "รอยืนยัน", className: "warn", Icon: CircleAlert },
-  not_passed: { label: "ยังไม่ผ่าน", className: "danger", Icon: XCircle },
-  missing: { label: "ยังไม่พบ", className: "info", Icon: CircleAlert },
-};
-
-function StatusBadge({ status }: { status: MatchStatus }) {
-  const { label, className, Icon } = statusDetails[status];
-  return <span className={`status shrink-0 gap-1 whitespace-nowrap ${className}`}><Icon aria-hidden="true" size={14} />{label}</span>;
-}
 
 function RequirementRow({ requirement, courses, selectedCourseId, onSelect, onConfirm, busy }: {
   requirement: RequiredCourse;

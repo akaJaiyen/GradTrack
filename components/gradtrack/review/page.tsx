@@ -1,7 +1,7 @@
 "use client";
 
 import { AcademicProfileReview } from "./academic-profile-review";
-import type { Tab } from "./shared";
+import type { Tab } from "../shared/academic";
 
 export function ReviewPage({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
   return <>

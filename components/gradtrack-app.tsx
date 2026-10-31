@@ -9,22 +9,30 @@ import {
   ShieldCheck,
   Wand2,
 } from "lucide-react";
-import { DocumentsPage } from "./gradtrack/documents-page";
-import { MatchingPage } from "./gradtrack/matching-page";
-import { OverviewPage } from "./gradtrack/overview-page";
-import { PrivacyPage } from "./gradtrack/privacy-page";
-import { ReviewPage } from "./gradtrack/review-page";
+import { DocumentsPage } from "./gradtrack/documents/page";
+import { MatchingPage } from "./gradtrack/matching/page";
+import { OverviewPage } from "./gradtrack/overview/page";
+import { PrivacyPage } from "./gradtrack/privacy/page";
+import { ReviewPage } from "./gradtrack/review/page";
 import {
-  api,
   fromCourse,
   fromRequirement,
-  type Doc,
   type Tab,
-  type View,
-} from "./gradtrack/shared";
+} from "./gradtrack/shared/academic";
+import { api } from "./gradtrack/shared/api";
+import type { Doc } from "./gradtrack/shared/documents";
 import type { Course, Requirement } from "@/lib/types";
 import type { ConfirmedMatch } from "@/lib/academic";
 import { TYPHOON_CONSENT_VERSION } from "@/lib/consent";
+
+type View =
+  | "overview"
+  | "upload"
+  | "review"
+  | "matching"
+  | "scenarios"
+  | "planner"
+  | "privacy";
 
 const navigationItems = [
   ["overview", "ภาพรวม", GraduationCap],

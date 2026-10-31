@@ -1,23 +1,7 @@
 import type { Course, Grade, Requirement } from "@/lib/types";
 import { normalizeAcademicTerm } from "@/lib/academic-term";
 
-export type View =
-  | "overview"
-  | "upload"
-  | "review"
-  | "matching"
-  | "scenarios"
-  | "planner"
-  | "privacy";
 export type Tab = "curriculum" | "student";
-export type Doc = {
-  id: string;
-  type: string;
-  file_name: string;
-  status: string;
-  extraction_error?: string | null;
-  created_at: string;
-};
 
 export const grades: Grade[] = [
   "A",
@@ -34,28 +18,6 @@ export const grades: Grade[] = [
   "I",
   "N",
 ];
-export const documentStatusLabels: Record<string, string> = {
-  uploaded: "อัปโหลดแล้ว",
-  extracting: "กำลังอ่าน",
-  review_needed: "ต้องตรวจสอบ",
-  ready: "พร้อมใช้",
-  failed: "อ่านไม่สำเร็จ",
-  rate_limited: "โควตา AI หมด",
-};
-
-export async function api(path: string, method = "GET", body?: unknown) {
-  const response = await fetch(path, {
-    method,
-    headers: body ? { "content-type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!response.ok)
-    throw new Error(
-      (await response.json().catch(() => null))?.error?.message ||
-        "Request failed",
-    );
-  return response.json();
-}
 export const fromCourse = (value: any): Course => ({
   id: value.id,
   code: value.code,

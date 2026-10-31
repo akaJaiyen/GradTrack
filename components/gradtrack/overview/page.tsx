@@ -5,56 +5,11 @@ import { BarChart3, BookOpenCheck, GraduationCap, TrendingUp } from "lucide-reac
 import { dashboardSummary } from "@/lib/dashboard-summary";
 import type { ConfirmedMatch } from "@/lib/academic";
 import type { Course, Requirement } from "@/lib/types";
+import { GpaTimeline } from "./gpa-timeline";
+import { SummaryCard } from "./summary-card";
 
 const formatGpa = (gpa: number, gradedCredits: number) => gradedCredits ? gpa.toFixed(2) : "—";
-const chartWidth = 640;
-const chartHeight = 250;
-const chartPadding = { top: 18, right: 18, bottom: 48, left: 38 };
 
-function SummaryCard({ label, value, description, Icon }: { label: string; value: string; description: string; Icon: typeof GraduationCap }) {
-  return <article className="card p-5">
-    <div className="flex items-start justify-between gap-3">
-      <div>
-        <p className="text-sm font-medium text-slate-600">{label}</p>
-        <p className="mt-2 text-3xl font-bold tabular-nums text-slate-900">{value}</p>
-        <p className="mt-2 text-sm text-slate-600">{description}</p>
-      </div>
-      <span className="rounded-lg bg-blue-50 p-2 text-blue-700"><Icon aria-hidden="true" size={22} /></span>
-    </div>
-  </article>;
-}
-
-function GpaTimeline({ terms }: { terms: ReturnType<typeof dashboardSummary>["terms"] }) {
-  const timelineTerms = terms.filter((term) => term.term && term.year).reverse();
-  const plotWidth = chartWidth - chartPadding.left - chartPadding.right;
-  const plotHeight = chartHeight - chartPadding.top - chartPadding.bottom;
-  const x = (index: number) => chartPadding.left + (timelineTerms.length > 1 ? index / (timelineTerms.length - 1) * plotWidth : plotWidth / 2);
-  const y = (gpa: number) => chartPadding.top + (4 - gpa) / 4 * plotHeight;
-  const points = timelineTerms
-    .map((term, index) => term.summary.gradedCredits ? `${x(index)},${y(term.summary.gpa)}` : null)
-    .filter((point): point is string => Boolean(point));
-
-  if (!timelineTerms.length) return <p className="mt-5 rounded-lg bg-slate-50 p-4 text-sm text-slate-600">ยังไม่มีข้อมูลเทอมที่ใช้สร้างกราฟ timeline</p>;
-
-  return <>
-    <div className="mt-5 overflow-x-auto" role="img" aria-label="กราฟ timeline GPA รายเทอม สเกลตั้งแต่ 0 ถึง 4">
-      <svg className="h-auto min-w-[540px] w-full" viewBox={`0 0 ${chartWidth} ${chartHeight}`} aria-hidden="true">
-        {[0, 1, 2, 3, 4].map((value) => <g key={value}>
-          <line x1={chartPadding.left} x2={chartWidth - chartPadding.right} y1={y(value)} y2={y(value)} stroke="#dbeafe" strokeDasharray="4 4" />
-          <text x={chartPadding.left - 8} y={y(value) + 4} fill="#64748b" fontSize="11" textAnchor="end">{value.toFixed(0)}</text>
-        </g>)}
-        <line x1={chartPadding.left} x2={chartWidth - chartPadding.right} y1={y(0)} y2={y(0)} stroke="#94a3b8" />
-        {points.length > 1 && <polyline fill="none" points={points.join(" ")} stroke="#2563eb" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" />}
-        {timelineTerms.map((term, index) => <g key={term.key}>
-          {term.summary.gradedCredits ? <><circle cx={x(index)} cy={y(term.summary.gpa)} fill="#ffffff" r="6" stroke="#2563eb" strokeWidth="3" /><text x={x(index)} y={y(term.summary.gpa) - 11} fill="#1e3a8a" fontSize="11" fontWeight="700" textAnchor="middle">{term.summary.gpa.toFixed(2)}</text></> : <circle cx={x(index)} cy={y(0)} fill="#94a3b8" r="4" />}
-          <text x={x(index)} y={chartHeight - 22} fill="#475569" fontSize="10" textAnchor="middle">{term.year}/{term.term === "summer" ? "ฤดูร้อน" : `T${term.term}`}</text>
-        </g>)}
-      </svg>
-      <ul className="sr-only">{timelineTerms.map((term) => <li key={term.key}>{term.label}: GPA {formatGpa(term.summary.gpa, term.summary.gradedCredits)}</li>)}</ul>
-    </div>
-    <p className="mt-2 text-sm text-slate-600">GPA เต็ม 4.00 · จุดสีเทาหมายถึงเทอมนั้นไม่มีเกรดที่ใช้คำนวณ GPA</p>
-  </>;
-}
 
 export function OverviewPage({
   courses,
