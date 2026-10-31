@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Upload } from "lucide-react";
-import { summarizeAcademicDocumentProcessing } from "@/lib/document-processing";
+import { estimateDocumentProgress, summarizeAcademicDocumentProcessing } from "@/lib/document-processing";
 import { api } from "../shared/api";
 import type { Doc } from "../shared/documents";
 import { ProcessingStatus } from "./processing-status";
@@ -21,6 +21,8 @@ export function DocumentsPage({
   const [busyRoles, setBusyRoles] = useState<Set<UploadRole>>(() => new Set());
   const [analysisRunning, setAnalysisRunning] = useState(false);
   const [uploadedDocs, setUploadedDocs] = useState<Partial<Record<UploadRole, Doc>>>({});
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const studyPlan = uploadedDocs.study_plan || docs.find(doc => doc.type === "study_plan");
   const transcript = uploadedDocs.transcript || docs.find(doc => doc.type === "transcript");
   const isExtracting = studyPlan?.status === "extracting" || transcript?.status === "extracting";
@@ -32,9 +34,31 @@ export function DocumentsPage({
   );
   useEffect(() => {
     if (!isExtracting) return;
-    const timer = window.setTimeout(() => void reload(), 15_000);
-    return () => window.clearTimeout(timer);
+    const storedStart = window.sessionStorage.getItem("academic-document-processing-started-at");
+    const startTime = storedStart ? Number(storedStart) : NaN;
+    if (Number.isFinite(startTime) && startTime > 0) setProcessingStartedAt(startTime);
+    else {
+      const startedAt = Date.now();
+      window.sessionStorage.setItem("academic-document-processing-started-at", String(startedAt));
+      setProcessingStartedAt(startedAt);
+    }
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      void reload();
+    }, 5_000);
+    return () => window.clearInterval(timer);
   }, [isExtracting, reload]);
+  useEffect(() => {
+    if (!isProcessing || processingStartedAt === null) {
+      if (!isProcessing) {
+        window.sessionStorage.removeItem("academic-document-processing-started-at");
+        setProcessingStartedAt(null);
+      }
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [isProcessing, processingStartedAt]);
   const upload = async (role: "study_plan" | "transcript", files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
@@ -66,6 +90,10 @@ export function DocumentsPage({
   };
   const startAnalysis = async (retry = false) => {
     setAnalysisRunning(true);
+    const startedAt = Date.now();
+    setProcessingStartedAt(startedAt);
+    setNow(startedAt);
+    window.sessionStorage.setItem("academic-document-processing-started-at", String(startedAt));
     try {
       await api("/api/academic-profile", "POST", { consent: true });
       await reload();
@@ -78,6 +106,8 @@ export function DocumentsPage({
       setAnalysisRunning(false);
     }
   };
+  const elapsedMs = processingStartedAt === null ? 0 : Math.max(0, now - processingStartedAt);
+  const progress = estimateDocumentProgress(elapsedMs);
   return (
     <>
       <section className="card p-6">
@@ -92,7 +122,7 @@ export function DocumentsPage({
             <UploadSlot role="transcript" title="Transcript" description="ผลการเรียนและเกรดที่ได้รับ" doc={transcript} disabled={isInteractionLocked} active={busyRoles.has("transcript")} upload={upload} />
           </div>
         </section>
-        <ProcessingStatus summary={processingSummary} busy={isInteractionLocked} start={startAnalysis} />
+        <ProcessingStatus summary={processingSummary} busy={isInteractionLocked} start={startAnalysis} progress={progress} elapsedMs={elapsedMs} />
       </section>
     </>
   );

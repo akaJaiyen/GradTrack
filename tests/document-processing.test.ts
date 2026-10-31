@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { summarizeAcademicDocumentProcessing } from "@/lib/document-processing";
+import { estimateDocumentProgress, formatElapsedTime, summarizeAcademicDocumentProcessing } from "@/lib/document-processing";
 
 describe("academic document processing summary", () => {
+  it("estimates progress from elapsed time without claiming the background job is complete", () => {
+    expect(estimateDocumentProgress(0)).toBe(0);
+    expect(estimateDocumentProgress(150_000)).toBe(47);
+    expect(estimateDocumentProgress(300_000)).toBe(95);
+    expect(estimateDocumentProgress(600_000)).toBe(95);
+    expect(estimateDocumentProgress(-1)).toBe(0);
+  });
+
+  it("formats elapsed processing time", () => {
+    expect(formatElapsedTime(9_000)).toBe("9 วินาที");
+    expect(formatElapsedTime(125_000)).toBe("2 นาที 5 วินาที");
+  });
+
   it("waits for the second required document before allowing analysis", () => {
     const result = summarizeAcademicDocumentProcessing([{ type: "study_plan", status: "uploaded" }]);
     expect(result).toMatchObject({ documentCount: 1, documentList: "Study Plan", state: "awaiting_documents", canStart: false });

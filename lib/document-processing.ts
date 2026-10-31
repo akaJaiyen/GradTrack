@@ -17,6 +17,19 @@ export type DocumentProcessingSummary = {
   canReprocess: boolean;
 };
 
+const estimatedProcessingDurationMs = 5 * 60 * 1_000;
+
+export function estimateDocumentProgress(elapsedMs: number) {
+  return Math.min(95, Math.floor(Math.max(0, elapsedMs) / estimatedProcessingDurationMs * 95));
+}
+
+export function formatElapsedTime(elapsedMs: number) {
+  const totalSeconds = Math.floor(Math.max(0, elapsedMs) / 1_000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes ? `${minutes} นาที ${seconds} วินาที` : `${seconds} วินาที`;
+}
+
 const documentTitles: Record<AcademicDocumentRole, string> = {
   study_plan: "Study Plan",
   transcript: "Transcript",
