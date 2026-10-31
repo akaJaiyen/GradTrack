@@ -65,6 +65,11 @@ export function GradTrackApp({
   const [showConsent, setShowConsent] = useState(false);
   const [savingConsent, setSavingConsent] = useState(false);
   const workspaceInitialized = useRef(false);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3_000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const reloadDocuments = useCallback(async () => {
     const documents = await api("/api/documents");
     setDocs(documents.data);
@@ -191,8 +196,9 @@ export function GradTrackApp({
         </h1>
         {notice && (
           <p
-            className="mb-4 rounded border border-blue-200 bg-blue-50 p-3 text-sm"
+            className="fixed left-1/2 top-4 z-[60] w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-blue-200 bg-blue-50 p-3 text-center text-sm shadow-lg"
             role="status"
+            aria-live="polite"
           >
             {notice}
           </p>
