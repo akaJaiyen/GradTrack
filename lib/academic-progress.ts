@@ -21,8 +21,9 @@ export function curriculumProgress(courses: ProgressCourse[], requirements: Prog
   const required = requirements.filter(requirement => requirement.requirement_type === "required_course").map(requirement => {
     const code = requirement.required_course_code;
     const name = requirement.required_course_name;
+    const codePrefix = code?.match(/^([0-9]+)X+$/i)?.[1] || null;
     const candidates = code
-      ? courses.filter(course => normalize(course.code) === normalize(code)).map(course => ({ id: course.id, code: course.code, name: course.name_th || "—", score: 1, grade: course.grade }))
+      ? courses.filter(course => codePrefix ? normalize(course.code).startsWith(codePrefix) : normalize(course.code) === normalize(code)).map(course => ({ id: course.id, code: course.code, name: course.name_th || "—", score: 1, grade: course.grade }))
       : courses.flatMap(course => {
         const score = name && course.name_th ? similarity(name, course.name_th) : 0;
         return score >= .7 ? [{ id: course.id, code: course.code, name: course.name_th || "—", score, grade: course.grade }] : [];

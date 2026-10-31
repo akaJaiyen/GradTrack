@@ -27,4 +27,9 @@ describe("curriculum progress", () => {
     const result = curriculumProgress([{ ...coded, grade: "F" }], [{ id: "coded", category_name: "core", requirement_type: "required_course", required_course_code: "CS101", required_course_name: "Programming", minimum_credits: 3 }], []);
     expect(result.required[0].status).toBe("not_passed");
   });
+
+  it("uses an x-suffixed code as a course-code prefix", () => {
+    const result = curriculumProgress([{ ...coded, code: "01175123" }], [{ id: "prefix", category_name: "กิจกรรม", requirement_type: "required_course", required_course_code: "01175XXX", required_course_name: "กิจกรรมพลศึกษา", minimum_credits: 1 }], []);
+    expect(result.required[0].status).toBe("passed");
+  });
 });

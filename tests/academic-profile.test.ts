@@ -40,4 +40,14 @@ describe("academic profile schema", () => {
       expect.objectContaining({ type: "required_course", code: null, name: "ภาษาต่างประเทศ 1", minimumCredits: 3 }),
     ]));
   });
+
+  it("preserves an x-suffixed course code as a prefix requirement", () => {
+    const profile = academicProfileExtractionSchema.parse({
+      profile: {}, curriculum: { requiredCourses: [{ id: "prefix", groupId: null, code: "01175xxx", nameTh: "วิชาเลือกสาขา", nameEn: null, credits: 3, evidencePath: "curriculum.requiredCourses.0" }] },
+      catalogCourses: [], completedCourses: [], unresolvedCourses: [], evidence: [], warnings: [], sources: [],
+    });
+    expect(requirementsFromProfile(profile)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "required_course", code: "01175XXX", name: "วิชาเลือกสาขา" }),
+    ]));
+  });
 });
