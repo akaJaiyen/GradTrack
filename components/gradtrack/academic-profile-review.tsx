@@ -1,23 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, Trash2 } from "lucide-react";
 import type { AcademicProfileExtraction } from "@/lib/extraction";
-import type { RequiredCourseProgress } from "@/lib/academic-progress";
 import { groupCoursesByTerm } from "@/lib/course-term-summary";
 import { academicTermLabels, academicTerms } from "@/lib/academic-term";
 import type { Course } from "@/lib/types";
 import { api, coursePayload, fromCourse, grades } from "./shared";
 import type { Tab } from "./shared";
 
-type Progress = { totalCredits: number | null; passedCredits: number; required: RequiredCourseProgress[]; passedRequired: number; pendingConfirmations: number };
 type TranscriptDraft = { id: string; code: string; name: string; credits: number | string; grade: Course["grade"] | null; term: Course["term"] | null; year: number | null; status: "ready" | "needs_review"; parser: "ku_pdf" | "ai"; evidence: { page: number; rowText: string; termHeader: string } };
 
 export function AcademicProfileReview({ tab }: { tab: Tab }) {
   const [profile, setProfile] = useState<AcademicProfileExtraction | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
   const [drafts, setDrafts] = useState<TranscriptDraft[]>([]);
-  const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const load = async () => {
@@ -26,7 +23,6 @@ export function AcademicProfileReview({ tab }: { tab: Tab }) {
       setProfile(result.data?.extraction_json || null);
       setCourses((result.courses || []).map(fromCourse));
       setDrafts(result.drafts || []);
-      setProgress(result.progress || null);
       setError(null);
     } catch {
       setError("ไม่สามารถโหลด academic profile ได้");
@@ -39,16 +35,58 @@ export function AcademicProfileReview({ tab }: { tab: Tab }) {
   if (!loaded) return <section className="card p-6"><p className="text-sm text-slate-600">กำลังโหลดข้อมูลการเรียน…</p></section>;
   if (tab === "student") return <UnifiedTermReview courses={courses} drafts={drafts} reload={load} />;
   if (!profile) return <section className="card p-6"><h2 className="font-bold">ยังไม่มีข้อมูลที่ AI อ่านแล้ว</h2><p className="mt-2 text-sm text-slate-600">อัปโหลดเอกสารหลักสูตร, รายวิชา หรือ Transcript จากหน้าเอกสารของฉัน</p></section>;
-  const evidence = (path: string) => profile.evidence.find(item => item.path === path);
-  return <div className="space-y-5">
-    <section className="card p-5"><h2 className="font-bold">{profile.profile.program || "Academic profile"}</h2><p className="mt-1 text-sm text-slate-600">{[profile.profile.institution, profile.profile.curriculumYear, profile.profile.degreeLevel].filter(Boolean).join(" · ")}</p>{profile.warnings.length > 0 && <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-800">พบ {profile.warnings.length} รายการที่ควรตรวจสอบ</p>}</section>
-    {progress && <section className="grid gap-3 sm:grid-cols-3"><Metric label="วิชาบังคับที่ผ่าน" value={`${progress.passedRequired}/${progress.required.length}`} /><Metric label="หน่วยกิตผ่านแล้ว" value={progress.totalCredits === null ? `${progress.passedCredits} (ยังไม่ระบุเป้าหมาย)` : `${progress.passedCredits}/${progress.totalCredits}`} /><Metric label="รอยืนยันจากชื่อวิชา" value={String(progress.pendingConfirmations)} /></section>}
-    {progress && <RequiredCoursesTable rows={progress.required} refresh={load} />}
-    <ProfileTable title="โครงสร้างและหน่วยกิต" headers={["หมวด", "ขั้นต่ำ (หน่วยกิต)", "หลักฐาน"]} rows={profile.curriculum.requirementGroups.filter(group => group.kind !== "container").map(group => [group.name, group.minimumCredits ?? "—", <Evidence key={group.id} item={evidence(`curriculum.requirementGroups.${group.id}`)} />])} />
-    <ProfileTable title="รายวิชาในหลักสูตร" headers={["รหัส", "ชื่อรายวิชา", "หน่วยกิต", "Prerequisite"]} rows={profile.catalogCourses.map(course => [course.code, course.nameTh || course.nameEn || "—", course.credits ?? "—", course.prerequisiteCodes.join(", ") || "—"])} />
-    {profile.unresolvedCourses.length > 0 && <ProfileTable title="รายการที่ AI ระบุรหัสวิชาไม่ได้" headers={["ข้อความต้นทาง", "เหตุผล"]} rows={profile.unresolvedCourses.map(course => [course.sourceText, course.reason])} />}
-    {profile.warnings.length > 0 && <section className="card p-5"><h2 className="font-bold">คำเตือน</h2><ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-800">{profile.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></section>}
-  </div>;
+  return <CurriculumReview profile={profile} reload={load} />;
+}
+
+type EditableCurriculumCourse = { id: string; groupName: string; code: string; nameTh: string; credits: number; evidencePath: string };
+
+function CurriculumReview({ profile, reload }: { profile: AcademicProfileExtraction; reload: () => Promise<void> }) {
+  const [rows, setRows] = useState<EditableCurriculumCourse[]>(() => rowsFromProfile(profile));
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => { setRows(rowsFromProfile(profile)); setDirty(false); }, [profile]);
+  const update = (id: string, field: keyof Omit<EditableCurriculumCourse, "id" | "evidencePath">, value: string | number) => {
+    setRows(current => current.map(row => row.id === id ? { ...row, [field]: value } : row));
+    setDirty(true);
+    setMessage(null);
+  };
+  const add = () => { setRows(current => [...current, { id: crypto.randomUUID(), groupName: "ยังไม่ระบุกลุ่ม", code: "", nameTh: "", credits: 3, evidencePath: "curriculum.requiredCourses" }]); setDirty(true); };
+  const remove = (id: string) => { setRows(current => current.filter(row => row.id !== id)); setDirty(true); setMessage(null); };
+  const save = async () => {
+    if (rows.some(row => !row.nameTh.trim() || !Number.isFinite(row.credits) || row.credits <= 0)) {
+      setMessage("กรุณากรอกชื่อรายวิชาและหน่วยกิตที่มากกว่า 0 ให้ครบก่อนบันทึก");
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api("/api/academic-profile", "PATCH", { extraction: profileFromRows(profile, rows) });
+      await reload();
+      setDirty(false);
+      setMessage("บันทึกข้อมูลหลักสูตรแล้ว ข้อมูลนี้จะถูกใช้ในหน้าจับคู่รายวิชาต่อไป");
+    } catch (caught) {
+      setMessage(caught instanceof Error ? caught.message : "บันทึกข้อมูลหลักสูตรไม่สำเร็จ");
+    } finally { setSaving(false); }
+  };
+  return <section className="space-y-4" data-dirty={dirty ? "true" : undefined}>
+    <section className="card p-5"><h2 className="font-bold">ตรวจสอบข้อมูลหลักสูตรจากเอกสาร</h2><p className="mt-1 text-sm text-slate-600">ตรวจ แก้ไข เพิ่ม หรือลบรายการให้ตรงกับ Study Plan ก่อนนำไปจับคู่รายวิชา</p>{message ? <p className={`mt-3 text-sm ${message.startsWith("บันทึก") ? "text-blue-700" : "text-red-700"}`} role="status">{message}</p> : null}</section>
+    <section className="card overflow-x-auto"><div className="flex flex-wrap items-center justify-between gap-2 p-4"><h3 className="font-bold">รายวิชาที่อ่านจาก Study Plan</h3><button className="btn inline-flex min-h-10 items-center gap-2 py-2" type="button" onClick={add}><Plus size={16} aria-hidden="true" />เพิ่มรายวิชา</button></div><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-3 py-2 font-medium">กลุ่ม/เทอม</th><th className="px-3 py-2 font-medium">รหัส</th><th className="px-3 py-2 font-medium">ชื่อรายวิชา</th><th className="px-3 py-2 font-medium">หน่วยกิต</th><th className="px-3 py-2"><span className="sr-only">ลบ</span></th></tr></thead><tbody>{rows.map(row => <tr className="border-t align-top" key={row.id}><td className="px-3 py-2"><CurriculumInput ariaLabel="กลุ่มหรือเทอม" value={row.groupName} onChange={value => update(row.id, "groupName", value)} /></td><td className="px-3 py-2"><CurriculumInput ariaLabel="รหัสวิชา" value={row.code} onChange={value => update(row.id, "code", value)} /></td><td className="px-3 py-2"><CurriculumInput ariaLabel="ชื่อรายวิชา" value={row.nameTh} onChange={value => update(row.id, "nameTh", value)} /></td><td className="px-3 py-2"><CurriculumInput ariaLabel="หน่วยกิต" type="number" value={row.credits} onChange={value => update(row.id, "credits", Number(value))} /></td><td className="px-3 py-2"><button aria-label={`ลบ ${row.code || row.nameTh || "รายวิชา"}`} className="min-h-9 rounded px-2 text-red-700 hover:bg-red-50" type="button" onClick={() => remove(row.id)}><Trash2 size={17} aria-hidden="true" /></button></td></tr>)}</tbody></table>{rows.length === 0 ? <p className="p-5 text-sm text-slate-600">ยังไม่มีรายวิชา เพิ่มรายการจาก Study Plan ได้</p> : null}</section>
+    <div className="flex justify-end"><button className="btn btn-primary min-h-10 py-2 disabled:cursor-wait disabled:opacity-60" disabled={saving} type="button" onClick={() => void save()}>{saving ? "กำลังบันทึก…" : "บันทึกข้อมูลหลักสูตร"}</button></div>
+  </section>;
+}
+
+function CurriculumInput({ ariaLabel, type = "text", value, onChange }: { ariaLabel: string; type?: "text" | "number"; value: string | number; onChange: (value: string) => void }) { return <input aria-label={ariaLabel} className="min-h-9 w-full rounded border border-slate-300 bg-white px-2 text-sm" min={type === "number" ? ".5" : undefined} step={type === "number" ? ".5" : undefined} type={type} value={value} onChange={event => onChange(event.target.value)} />; }
+
+function rowsFromProfile(profile: AcademicProfileExtraction): EditableCurriculumCourse[] {
+  const groups = new Map(profile.curriculum.requirementGroups.map(group => [group.id, group.name]));
+  return profile.curriculum.requiredCourses.map(course => ({ id: course.id, groupName: course.groupId ? groups.get(course.groupId) || "ยังไม่ระบุกลุ่ม" : "ยังไม่ระบุกลุ่ม", code: course.code || "", nameTh: course.nameTh || course.nameEn || "", credits: course.credits || 0, evidencePath: course.evidencePath }));
+}
+
+function profileFromRows(profile: AcademicProfileExtraction, rows: EditableCurriculumCourse[]): AcademicProfileExtraction {
+  const groups = [...new Map(rows.map(row => [row.groupName.trim() || "ยังไม่ระบุกลุ่ม", row])).values()];
+  const groupId = new Map(groups.map((group, index) => [group.groupName.trim() || "ยังไม่ระบุกลุ่ม", `review-group-${index + 1}`]));
+  return { ...profile, curriculum: { ...profile.curriculum, requirementGroups: groups.map(group => ({ id: groupId.get(group.groupName.trim() || "ยังไม่ระบุกลุ่ม")!, parentId: null, name: group.groupName.trim() || "ยังไม่ระบุกลุ่ม", kind: "required_bucket", minimumCredits: null, requiredCourseCodes: rows.filter(row => row.groupName.trim() === group.groupName.trim() && row.code.trim()).map(row => row.code.trim()) })), requiredCourses: rows.map((row, index) => ({ id: row.id, groupId: groupId.get(row.groupName.trim() || "ยังไม่ระบุกลุ่ม")!, code: row.code.trim() || null, nameTh: row.nameTh.trim(), nameEn: null, credits: Number(row.credits), evidencePath: row.evidencePath || `curriculum.requiredCourses.${index}` })) }, catalogCourses: rows.filter(row => row.code.trim()).map(row => ({ code: row.code.trim(), nameTh: row.nameTh.trim(), nameEn: null, credits: Number(row.credits), prerequisiteCodes: [], requirementGroupIds: [groupId.get(row.groupName.trim() || "ยังไม่ระบุกลุ่ม")!] })) };
 }
 
 type CourseField = "code" | "nameTh" | "credits" | "grade" | "term" | "year";
@@ -316,14 +354,3 @@ function DeferredCourseInput({ className, course, error, field, label, onChange 
   const commit = () => onChange(course.id, field, value === "" ? undefined : field === "year" ? Number(value) : value);
   return <><input aria-invalid={Boolean(error)} aria-label={label} className={className} min={field === "year" ? "1900" : undefined} max={field === "year" ? "3000" : undefined} step={field === "year" ? "1" : undefined} type={field === "year" ? "number" : "text"} value={value} onBlur={commit} onChange={(event) => setValue(event.target.value)} />{error ? <span className="mt-1 block text-xs text-red-700">{error}</span> : null}</>;
 }
-
-function Metric({ label, value }: { label: string; value: string }) { return <section className="card p-4"><p className="text-sm text-slate-500">{label}</p><p className="mt-1 text-xl font-bold">{value}</p></section>; }
-const statusLabel: Record<RequiredCourseProgress["status"], string> = { passed: "ผ่านแล้ว", not_passed: "พบวิชา แต่เกรดไม่ผ่าน", missing: "ยังไม่พบใน Transcript", needs_confirmation: "รอยืนยันการจับคู่" };
-function RequiredCoursesTable({ rows, refresh }: { rows: RequiredCourseProgress[]; refresh: () => Promise<unknown> }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  async function confirm(requirementId: string, courseId: string) { setBusy(`${requirementId}:${courseId}`); try { await api("/api/matches", "POST", { courseId, requirementId, matchType: "manual", confidence: 1, status: "confirmed" }); await refresh(); } finally { setBusy(null); } }
-  return <section className="card overflow-x-auto"><h2 className="p-5 font-bold">ตรวจวิชาบังคับจาก Study Plan</h2><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">รหัส</th><th className="px-5 py-3 font-medium">ชื่อวิชา</th><th className="px-5 py-3 font-medium">หน่วยกิต</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">การจับคู่</th></tr></thead><tbody>{rows.length ? rows.map(row => <tr className="border-t" key={row.requirementId}><td className="px-5 py-3">{row.code || "—"}</td><td className="px-5 py-3">{row.name || "—"}</td><td className="px-5 py-3">{row.credits ?? "—"}</td><td className="px-5 py-3">{statusLabel[row.status]}</td><td className="px-5 py-3">{row.status === "needs_confirmation" ? <div className="grid gap-2">{row.candidates.map(candidate => <button className="text-left text-blue-700 underline disabled:text-slate-400" disabled={busy !== null} key={candidate.id} onClick={() => void confirm(row.requirementId, candidate.id)}>ยืนยัน {candidate.code} — {candidate.name} ({Math.round(candidate.score * 100)}%)</button>)}</div> : row.candidates[0] ? `${row.candidates[0].code} — ${row.candidates[0].name}` : "—"}</td></tr>) : <tr><td className="px-5 py-4 text-slate-500" colSpan={5}>ไม่พบวิชาบังคับที่ระบุได้ใน Study Plan</td></tr>}</tbody></table></section>;
-}
-
-function Evidence({ item }: { item: AcademicProfileExtraction["evidence"][number] | undefined }) { return item ? <span title={item.text} className="text-xs text-slate-500">หน้า {item.page || "—"}: {item.text}</span> : <span className="text-xs text-slate-400">—</span>; }
-function ProfileTable({ title, headers, rows }: { title: string; headers: string[]; rows: ReactNode[][] }) { return <section className="card overflow-x-auto"><h2 className="p-5 font-bold">{title}</h2><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr>{headers.map(header => <th className="px-5 py-3 font-medium" key={header}>{header}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row, index) => <tr className="border-t" key={index}>{row.map((cell, cellIndex) => <td className="px-5 py-3" key={cellIndex}>{cell}</td>)}</tr>) : <tr><td className="px-5 py-4 text-slate-500" colSpan={headers.length}>ไม่พบข้อมูลในเอกสาร</td></tr>}</tbody></table></section>; }

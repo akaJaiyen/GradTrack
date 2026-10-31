@@ -3,7 +3,7 @@ import { z } from "zod";
 import { error, unavailable } from "@/lib/api";
 import { emptyAcademicProfile, mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
 import { extractTyphoonProfile, isTyphoonRateLimited, renderPdfPages, TyphoonRequestError, typhoonOcrPages } from "@/lib/typhoon";
-import { normalizedCourseCode, type AcademicProfileExtraction } from "@/lib/extraction";
+import { academicProfileExtractionSchema, normalizedCourseCode, type AcademicProfileExtraction } from "@/lib/extraction";
 import { documentExtractionErrorCode, type DocumentExtractionErrorCode, type ExtractionStage } from "@/lib/document-extraction-error";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
@@ -32,6 +32,55 @@ export async function GET() {
       : coursesResult.error || requirementsResult.error || matchesResult.error
       ? error("Could not load academic progress", 500)
       : NextResponse.json({ data, courses: coursesResult.data || [], drafts: draftsResult.data || [], progress: curriculumProgress(coursesResult.data || [], requirementsResult.data || [], matchesResult.data || []) });
+}
+
+const reviewedProfileInput = z.object({ extraction: academicProfileExtractionSchema });
+
+/** Saves the user's reviewed Study Plan data before matching or progress checks. */
+export async function PATCH(request: Request) {
+  const body = reviewedProfileInput.safeParse(await request.json().catch(() => null));
+  if (!body.success) return error("Invalid reviewed curriculum");
+  const { db, workspaceId } = await workspaceContext();
+  if (!db) return unavailable();
+  if (!workspaceId) return error("Unauthorized", 401);
+
+  const { data: current, error: currentError } = await db
+    .from("academic_profiles")
+    .select("source_document_ids,consented_at")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  if (currentError || !current) return error("Academic profile not found", 404);
+
+  const requirements = requirementsFromProfile(body.data.extraction);
+  const { error: profileError } = await db.from("academic_profiles").update({
+    extraction_json: body.data.extraction,
+    status: body.data.extraction.profile.status,
+    extraction_version: "reviewed-study-plan-v1",
+  }).eq("workspace_id", workspaceId);
+  if (profileError) return error("Could not save reviewed curriculum", 500);
+
+  // Requirements are derived from the reviewed profile, so matching always
+  // uses the values the user approved on this page.
+  const { error: removeError } = await db.from("degree_requirements")
+    .delete()
+    .eq("workspace_id", workspaceId)
+    .eq("source", "curriculum");
+  if (removeError) return error("Could not update reviewed curriculum", 500);
+  if (requirements.length) {
+    const { error: insertError } = await db.from("degree_requirements").insert(requirements.map(requirement => ({
+      workspace_id: workspaceId,
+      category_name: requirement.category,
+      requirement_type: requirement.type,
+      required_course_code: requirement.code,
+      required_course_name: requirement.name,
+      minimum_credits: requirement.minimumCredits,
+      prerequisite_data: [],
+      source: "curriculum",
+      verified_by_user: true,
+    })));
+    if (insertError) return error("Could not update reviewed curriculum", 500);
+  }
+  return NextResponse.json({ data: body.data.extraction, sourceDocumentIds: current.source_document_ids, consentedAt: current.consented_at });
 }
 
 const input = z.object({ consent: z.boolean() });
