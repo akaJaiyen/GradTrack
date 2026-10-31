@@ -15,7 +15,7 @@ export type RequiredCourseProgress = {
   candidates: Array<{ id: string; code: string; name: string; score: number; grade: string | null }>;
 };
 export type ElectiveCreditProgress = {
-  requirementId: string;
+  requirementIds: string[];
   category: string;
   requiredCredits: number;
   passedCredits: number;
@@ -48,21 +48,15 @@ export function curriculumProgress(courses: ProgressCourse[], requirements: Prog
   });
   const total = requirements.find(requirement => requirement.requirement_type === "total_credit")?.minimum_credits;
   const passedCredits = passedCourses.reduce((sum, course) => sum + Number(course.credits), 0);
-  const electives = requirements.filter(requirement => requirement.requirement_type === "elective_credit").map(requirement => {
+  const electiveGroups = new Map<string, Omit<ElectiveCreditProgress, "status">>();
+  for (const requirement of requirements.filter(requirement => requirement.requirement_type === "elective_credit")) {
     const matchedCourses = passedCourses
       .filter(course => confirmed.has(`${course.id}:${requirement.id}`))
       .map(course => ({ id: course.id, code: course.code, name: course.name_th || "—", credits: Number(course.credits), grade: course.grade }));
-    const categoryPassedCredits = matchedCourses.reduce((sum, course) => sum + course.credits, 0);
-    const requiredCredits = Number(requirement.minimum_credits || 0);
-    return {
-      requirementId: requirement.id,
-      category: requirement.category_name,
-      requiredCredits,
-      passedCredits: categoryPassedCredits,
-      status: categoryPassedCredits >= requiredCredits ? "complete" : categoryPassedCredits > 0 ? "in_progress" : "empty",
-      matchedCourses,
-    } satisfies ElectiveCreditProgress;
-  });
+    const existing = electiveGroups.get(requirement.category_name);
+    electiveGroups.set(requirement.category_name, existing ? { ...existing, requirementIds: [...existing.requirementIds, requirement.id], requiredCredits: existing.requiredCredits + Number(requirement.minimum_credits || 0), passedCredits: existing.passedCredits + matchedCourses.reduce((sum, course) => sum + course.credits, 0), matchedCourses: [...existing.matchedCourses, ...matchedCourses] } : { requirementIds: [requirement.id], category: requirement.category_name, requiredCredits: Number(requirement.minimum_credits || 0), passedCredits: matchedCourses.reduce((sum, course) => sum + course.credits, 0), matchedCourses });
+  }
+  const electives = [...electiveGroups.values()].map(group => ({ ...group, status: group.passedCredits >= group.requiredCredits ? "complete" : group.passedCredits > 0 ? "in_progress" : "empty" } satisfies ElectiveCreditProgress));
   return {
     totalCredits: total === undefined || total === null ? null : Number(total),
     passedCredits,

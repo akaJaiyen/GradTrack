@@ -46,4 +46,14 @@ describe("curriculum progress", () => {
     expect(result.electives[0].matchedCourses[0]).toMatchObject({ name: "Programming" });
   });
 
+  it("groups only exactly equal elective category names", () => {
+    const result = curriculumProgress([], [
+      { id: "same-1", category_name: "วิชา ภาษาต่างประเทศ 1 ภาษา", requirement_type: "elective_credit", required_course_code: null, required_course_name: null, minimum_credits: 3 },
+      { id: "same-2", category_name: "วิชา ภาษาต่างประเทศ 1 ภาษา", requirement_type: "elective_credit", required_course_code: null, required_course_name: null, minimum_credits: 3 },
+      { id: "different", category_name: "ภาษาต่างประเทศ 1 ภาษา", requirement_type: "elective_credit", required_course_code: null, required_course_name: null, minimum_credits: 3 },
+    ], []);
+    expect(result.electives).toHaveLength(2);
+    expect(result.electives[0]).toMatchObject({ requiredCredits: 6, requirementIds: ["same-1", "same-2"] });
+  });
+
 });
