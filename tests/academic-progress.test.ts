@@ -32,4 +32,18 @@ describe("curriculum progress", () => {
     const result = curriculumProgress([{ ...coded, code: "01175123" }], [{ id: "prefix", category_name: "กิจกรรม", requirement_type: "required_course", required_course_code: "01175XXX", required_course_name: "กิจกรรมพลศึกษา", minimum_credits: 1 }], []);
     expect(result.required[0].status).toBe("passed");
   });
+
+  it("shows a user-confirmed manual match even when the course code differs", () => {
+    const result = curriculumProgress([named], [{ id: "required", category_name: "GE", requirement_type: "required_course", required_course_code: "GE101", required_course_name: "Thai", minimum_credits: 3 }], [{ course_id: "course-2", degree_requirement_id: "required", status: "confirmed" }]);
+    expect(result.required[0]).toMatchObject({ status: "passed" });
+    expect(result.required[0].candidates[0]).toMatchObject({ id: "course-2", code: "GE 100" });
+  });
+
+  it("counts only confirmed passing courses in each elective category", () => {
+    const result = curriculumProgress([coded, named], [{ id: "elective", category_name: "วิชาเลือกเสรี", requirement_type: "elective_credit", required_course_code: null, required_course_name: null, minimum_credits: 6 }], [{ course_id: "course-1", degree_requirement_id: "elective", status: "confirmed" }]);
+    expect(result.electives[0]).toMatchObject({ category: "วิชาเลือกเสรี", passedCredits: 3, requiredCredits: 6, status: "in_progress" });
+    expect(result.electives[0].matchedCourses).toHaveLength(1);
+    expect(result.electives[0].matchedCourses[0]).toMatchObject({ name: "Programming" });
+  });
+
 });
