@@ -9,11 +9,14 @@ export type DocumentExtractionErrorCode =
   | "typhoon_rate_limited"
   | "typhoon_ocr"
   | "typhoon_text"
+  | "pdf_read"
+  | "pdf_render"
+  | "extraction_save"
   | "storage_download"
   | "profile_save"
   | "unknown";
 
-export type ExtractionStage = "storage_download" | "typhoon_ocr" | "typhoon_text" | "profile_save";
+export type ExtractionStage = "storage_download" | "pdf_read" | "pdf_render" | "typhoon_ocr" | "extraction_save" | "typhoon_text" | "profile_save";
 
 function isTyphoonRequestError(error: unknown): error is { status: number; stage: "typhoon_ocr" | "typhoon_text" } {
   return Boolean(error && typeof error === "object" && "status" in error && typeof error.status === "number" && "stage" in error && (error.stage === "typhoon_ocr" || error.stage === "typhoon_text"));
@@ -22,6 +25,9 @@ function isTyphoonRequestError(error: unknown): error is { status: number; stage
 /** Maps untrusted provider/database errors to non-sensitive, user-displayable codes. */
 export function documentExtractionErrorCode(error: unknown, stage: ExtractionStage): DocumentExtractionErrorCode {
   if (stage === "storage_download") return "storage_download";
+  if (stage === "pdf_read") return "pdf_read";
+  if (stage === "pdf_render") return "pdf_render";
+  if (stage === "extraction_save") return "extraction_save";
   if (stage === "profile_save") return "profile_save";
   if (isTyphoonRequestError(error)) {
     if (error.status === 0) return "typhoon_configuration";
@@ -46,6 +52,9 @@ export function documentExtractionErrorMessage(code: string | null | undefined) 
     typhoon_rate_limited: "เกินโควตาการเรียก Typhoon ชั่วคราว",
     typhoon_ocr: "Typhoon OCR อ่านเอกสารไม่สำเร็จ",
     typhoon_text: "Typhoon สกัดข้อมูลการเรียนจากข้อความ OCR ไม่สำเร็จ",
+    pdf_read: "อ่านข้อมูล PDF ไม่สำเร็จ ระบบจะลอง OCR จากภาพแทน",
+    pdf_render: "แปลงหน้า PDF เป็นภาพไม่สำเร็จ",
+    extraction_save: "อ่านเอกสารได้ แต่บันทึกผล OCR ไม่สำเร็จ",
     storage_download: "เซิร์ฟเวอร์ดาวน์โหลดไฟล์จากพื้นที่เก็บข้อมูลไม่ได้",
     profile_save: "อ่านเอกสารได้ แต่บันทึกผลลงฐานข้อมูลไม่ได้",
     unknown: "งานอ่านเอกสารล้มเหลวโดยไม่ทราบสาเหตุ",

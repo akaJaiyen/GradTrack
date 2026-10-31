@@ -11,6 +11,7 @@ import { hasTyphoonConsent } from "@/lib/consent";
 import { parseKuTranscriptMarkdown, parseKuTranscriptPdf, passesTranscriptAcceptanceGate, type TranscriptDraft } from "@/lib/ku-transcript-parser";
 import { aiTranscriptDrafts } from "@/lib/transcript-drafts";
 import { parseStudyPlanMarkdown, parseStudyPlanPdf } from "@/lib/study-plan-parser";
+import { tryPdfParser } from "@/lib/pdf-parser-fallback";
 
 export const runtime = "nodejs";
 
@@ -121,12 +122,18 @@ export async function POST(request: Request) {
         stage = "storage_download";
         const { data: file, error: downloadError } = await db.storage.from("private-documents").download(document.file_path);
         if (downloadError || !file) throw new Error("Could not download an uploaded document");
-        stage = "typhoon_ocr";
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const kuTranscript = document.type === "transcript" && document.mime_type === "application/pdf" ? await parseKuTranscriptPdf(bytes) : null;
-        const nativeStudyPlan = document.type === "study_plan" && document.mime_type === "application/pdf"
-          ? await parseStudyPlanPdf(bytes, document.id)
-          : null;
+        const isPdf = document.mime_type === "application/pdf";
+        let kuTranscript: Awaited<ReturnType<typeof parseKuTranscriptPdf>> | null = null;
+        if (document.type === "transcript" && isPdf) {
+          stage = "pdf_read";
+          kuTranscript = await tryPdfParser("transcript", () => parseKuTranscriptPdf(bytes));
+        }
+        let nativeStudyPlan: Awaited<ReturnType<typeof parseStudyPlanPdf>> | null = null;
+        if (document.type === "study_plan" && isPdf) {
+          stage = "pdf_read";
+          nativeStudyPlan = await tryPdfParser("study_plan", () => parseStudyPlanPdf(bytes, document.id));
+        }
         const gate = kuTranscript && passesTranscriptAcceptanceGate(kuTranscript.drafts, kuTranscript.pageCount);
         if (kuTranscript && gate?.ok) {
           transcriptDrafts.push({ documentId: document.id, drafts: kuTranscript.drafts });
@@ -139,8 +146,16 @@ export async function POST(request: Request) {
           extractionAttempts.push({ document, extraction: nativeStudyPlan });
           continue;
         }
-        const pages = document.mime_type === "application/pdf" ? await renderPdfPages(bytes) : [Buffer.from(bytes).toString("base64")];
+        let pages: string[];
+        if (isPdf) {
+          stage = "pdf_render";
+          pages = await renderPdfPages(bytes);
+        } else {
+          pages = [Buffer.from(bytes).toString("base64")];
+        }
+        stage = "typhoon_ocr";
         const markdown = await typhoonOcrPages(pages);
+        stage = "extraction_save";
         const { error: saveOcrError } = await db.from("document_extractions").insert({ document_id: document.id, raw_extraction_json: { text: markdown }, confidence: 0.5, extraction_version: "typhoon-ocr-v1" });
         if (saveOcrError) throw new Error("Could not save OCR output");
         stage = "typhoon_text";
