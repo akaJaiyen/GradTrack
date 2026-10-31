@@ -32,14 +32,10 @@ export async function POST(request: NextRequest) {
     return error(message);
   }
   const { db, id } = await workspace(); if (!db) return unavailable(); if (!id) return error("Unauthorized", 401);
-  // One active document per role. Replacing a source clears only its unconfirmed
-  // draft data; user-confirmed courses remain available.
+  // One active document per role. Draft replacement happens only when analysis
+  // starts, so file upload remains available while a database migration is pending.
   const { data: previous, error: previousError } = await db.from("documents").select("id,file_path").eq("workspace_id", id).eq("type", parsed.data.type);
   if (previousError) return error("Could not replace previous document", 500);
-  if (parsed.data.type === "transcript") {
-    const { error: clearError } = await db.from("transcript_course_drafts").delete().eq("workspace_id", id);
-    if (clearError) return error("Transcript-draft database migration is required. Apply 0011_transcript_course_drafts.sql first.", 503);
-  }
   if (previous?.length) {
     const { error: storageError } = await db.storage.from("private-documents").remove(previous.map(item => item.file_path));
     if (storageError) return error("Could not remove previous document file", 500);
