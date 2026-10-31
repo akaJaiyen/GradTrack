@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, ChevronDown, CircleAlert, Link2, RefreshCw, RotateCcw, Search, X } from "lucide-react";
 import { api } from "../shared/api";
+import { SingleSelectPicker } from "../shared/single-select-picker";
 import { StatusBadge } from "./status-badge";
 import type { Candidate, ElectiveCategory, MatchableRequirement, MatchingApiResponse, MatchingData, MatchStatus, RequiredCourse } from "./types";
 
@@ -26,11 +27,7 @@ function RequirementRow({ requirement, courses, selectedCourseId, onSelect, onCo
     <td className="px-5 py-3"><StatusBadge status={requirement.status} />{requirement.status === "not_passed" && suggested ? <p className="mt-2 text-xs text-red-700">เกรดยังไม่ผ่าน</p> : null}</td>
     <td className="px-5 py-3">
       {!hasMatch ? <div className="flex items-center gap-2">
-        <label className="sr-only" htmlFor={`match-${requirement.requirementId}`}>เลือกรายวิชาที่จะจับคู่กับ {courseName}</label>
-        <select id={`match-${requirement.requirementId}`} className="h-10 min-w-0 flex-1 rounded-lg border border-blue-200 bg-white px-3 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" value={selectedCourseId} onChange={(event) => onSelect(event.target.value)}>
-          <option value="">เลือกรายวิชา</option>
-          {courses.map((course) => <option key={course.id} value={course.id}>{course.code} — {course.name} ({course.grade || "ไม่มีเกรด"})</option>)}
-        </select>
+        <div className="min-w-0 flex-1"><SingleSelectPicker ariaLabel={`เลือกรายวิชาที่จะจับคู่กับ ${courseName}`} onChange={onSelect} options={courses.map((course) => ({ value: course.id, label: `${course.code} — ${course.name} (${course.grade || "ไม่มีเกรด"})` }))} placeholder="เลือกรายวิชา" value={selectedCourseId} /></div>
         <button className="btn min-h-10 shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50" disabled={!selectedCourseId || busy} type="button" onClick={() => void onConfirm(requirement, selectedCourseId, false)}>
           <Link2 aria-hidden="true" size={16} /> จับคู่
         </button>
@@ -80,13 +77,13 @@ function ElectiveRow({ requirement, courses, selectedCourseIds, onSelect, onConf
     <td className="px-5 py-3">
       <div className="flex items-start gap-2">
         <div className="relative min-w-0 flex-1" ref={pickerRef}>
-          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-800 focus-within:ring-2 focus-within:ring-blue-300">
+          <div aria-controls={pickerId} aria-expanded={isOpen} aria-haspopup="listbox" aria-label="เลือกรายวิชา" className="flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-800 transition-colors hover:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-300" role="combobox" tabIndex={0} onClick={() => !busy && !isOpen && setIsOpen(true)} onKeyDown={(event) => { if (!busy && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setIsOpen((open) => !open); } }}>
             <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-              {selectedCourses.length ? selectedCourses.map((course) => <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-900" key={course.id}>{course.code}<button aria-label={`ลบ ${course.code} — ${course.name}`} className="rounded p-0.5 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500" type="button" onClick={() => toggleCourse(course.id)}><X aria-hidden="true" size={13} /></button></span>) : <span className="py-1 text-slate-500">เลือกรายวิชา</span>}
+              {selectedCourses.length ? selectedCourses.map((course) => <span className="inline-flex max-w-full items-center gap-1 rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-900" key={course.id}>{course.code}<button aria-label={`ลบ ${course.code} — ${course.name}`} className="rounded p-0.5 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500" type="button" onClick={(event) => { event.stopPropagation(); toggleCourse(course.id); }}><X aria-hidden="true" size={13} /></button></span>) : <span className="py-1 text-slate-500">เลือกรายวิชา</span>}
             </div>
-            <button aria-controls={pickerId} aria-expanded={isOpen} aria-label="เปิดรายการรายวิชา" className="rounded p-1 text-slate-500 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50" disabled={busy} type="button" onClick={() => setIsOpen((open) => !open)}><ChevronDown aria-hidden="true" className={`transition-transform ${isOpen ? "rotate-180" : ""}`} size={16} /></button>
+            <ChevronDown aria-hidden="true" className={`shrink-0 text-slate-500 transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`} size={16} />
           </div>
-          {isOpen ? <div className="absolute left-0 z-20 mt-1 w-full min-w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-lg" id={pickerId}><label className="flex items-center gap-2 rounded-md border border-slate-200 px-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200"><Search aria-hidden="true" className="text-slate-400" size={16} /><input autoFocus className="h-9 min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" placeholder="ค้นหารหัสหรือชื่อวิชา" value={query} onChange={(event) => setQuery(event.target.value)} /></label><div className="mt-2 max-h-52 overflow-y-auto">{filteredCourses.length ? filteredCourses.map((course) => <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-blue-50" key={course.id}><input aria-label={`${course.code} — ${course.name}`} checked={selectedCourseIds.includes(course.id)} className="size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" onChange={() => toggleCourse(course.id)} /><span className="min-w-0"><span className="font-medium text-slate-800">{course.code}</span><span className="text-slate-600"> — {course.name}</span><span className="ml-1 text-xs text-slate-500">({course.grade || "ไม่มีเกรด"})</span></span></label>) : <p className="px-2 py-3 text-sm text-slate-500">ไม่พบรายวิชา</p>}</div></div> : null}
+          {isOpen ? <div className="absolute left-0 z-20 mt-1 w-full min-w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-lg" id={pickerId} onClick={(event) => event.stopPropagation()}><label className="flex items-center gap-2 rounded-md border border-slate-200 px-2 focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-200"><Search aria-hidden="true" className="text-slate-400" size={16} /><input autoFocus className="h-9 min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" placeholder="ค้นหารหัสหรือชื่อวิชา" value={query} onChange={(event) => setQuery(event.target.value)} /></label><div className="mt-2 max-h-52 overflow-y-auto">{filteredCourses.length ? filteredCourses.map((course) => <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-slate-700 hover:bg-blue-50" key={course.id}><input aria-label={`${course.code} — ${course.name}`} checked={selectedCourseIds.includes(course.id)} className="size-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" type="checkbox" onChange={() => toggleCourse(course.id)} /><span className="min-w-0"><span className="font-medium text-slate-800">{course.code}</span><span className="text-slate-600"> — {course.name}</span><span className="ml-1 text-xs text-slate-500">({course.grade || "ไม่มีเกรด"})</span></span></label>) : <p className="px-2 py-3 text-sm text-slate-500">ไม่พบรายวิชา</p>}</div></div> : null}
         </div>
         <button className="btn min-h-10 shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50" disabled={!selectedCourseIds.length || busy} type="button" onClick={() => void onConfirm(requirement, selectedCourseIds)}>ยืนยัน</button>
       </div>
@@ -95,13 +92,15 @@ function ElectiveRow({ requirement, courses, selectedCourseIds, onSelect, onConf
   </tr>;
 }
 
-export function MatchingPage() {
+export function MatchingPage({ onComplete }: { onComplete: () => Promise<void> }) {
   const [data, setData] = useState<MatchingData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyRequirementId, setBusyRequirementId] = useState<string | null>(null);
   const [savingAllElectives, setSavingAllElectives] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [showPendingConfirmation, setShowPendingConfirmation] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [selectedCourses, setSelectedCourses] = useState<Record<string, string>>({});
   const [selectedElectiveCourses, setSelectedElectiveCourses] = useState<Record<string, string[]>>({});
 
@@ -220,22 +219,36 @@ export function MatchingPage() {
       setSavingAllElectives(false);
     }
   };
+  const complete = async () => {
+    setCompleting(true);
+    try {
+      await onComplete();
+    } finally {
+      setCompleting(false);
+      setShowPendingConfirmation(false);
+    }
+  };
   const requiredSorted = [...progress.required].sort((left, right) => {
     const rank: Record<MatchStatus, number> = { not_passed: 0, missing: 1, needs_confirmation: 2, passed: 3 };
     return rank[left.status] - rank[right.status];
   });
+  const automaticallyMatchedRequired = requiredSorted.filter((requirement) => requirement.code && requirement.candidates.length > 0);
+  const requiresManualMatching = requiredSorted.filter((requirement) => !requirement.code || requirement.candidates.length === 0);
   const electivesSorted = [...progress.electives].sort((left, right) => {
     const rank: Record<ElectiveCategory["status"], number> = { empty: 0, in_progress: 1, complete: 2 };
     return rank[left.status] - rank[right.status];
   });
+  const hasPendingSelections = Boolean(Object.values(selectedCourses).some(Boolean) || pendingElectiveSelections.length);
+  const completionDisabled = !hasRequirements || resetting || busyRequirementId !== null || savingAllElectives || completing || hasPendingSelections;
 
   return <section className="space-y-5">
     <section className="card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 className="text-xl font-bold">จับคู่รายวิชา</h2><p className="mt-1 text-sm text-slate-600">ยืนยันเฉพาะรายวิชาที่ชื่อคล้ายกันหรือจับคู่ด้วยตนเอง รายวิชาที่รหัสตรงกันจะนับให้อัตโนมัติ</p></div>
-        <button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 shadow-sm transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={resetting || busyRequirementId !== null || savingAllElectives} type="button" onClick={() => void resetMatches()}><RotateCcw aria-hidden="true" size={16} />{resetting ? "กำลังรีเซ็ต…" : "รีเซ็ตการจับคู่"}</button>
+        <div className="flex flex-wrap gap-2"><button className="btn btn-primary min-h-10 disabled:cursor-not-allowed disabled:opacity-50" disabled={completionDisabled} type="button" onClick={() => progress.pendingConfirmations ? setShowPendingConfirmation(true) : void complete()}>{completing ? "กำลังเปิดสรุป…" : "เสร็จสิ้นการจับคู่"}</button><button className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-rose-200 bg-white px-3 text-sm font-semibold text-rose-700 shadow-sm transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 disabled:cursor-not-allowed disabled:opacity-50" disabled={resetting || busyRequirementId !== null || savingAllElectives || completing} type="button" onClick={() => void resetMatches()}><RotateCcw aria-hidden="true" size={16} />{resetting ? "กำลังรีเซ็ต…" : "รีเซ็ตการจับคู่"}</button></div>
       </div>
       {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
+      {hasPendingSelections ? <p className="mt-3 text-sm text-amber-800" role="status">ยืนยันรายวิชาที่เลือกไว้ก่อน จึงจะสรุปผลการจับคู่ได้</p> : null}
       {hasRequirements ? <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-3"><p className="text-sm text-slate-600">วิชาบังคับผ่านแล้ว</p><p className="mt-1 text-2xl font-bold tabular-nums text-blue-900">{progress.passedRequired}<span className="text-base font-medium"> / {totalRequired}</span></p></div>
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3"><p className="text-sm text-amber-900">รอยืนยัน</p><p className="mt-1 text-2xl font-bold tabular-nums text-amber-950">{progress.pendingConfirmations}</p></div>
@@ -246,10 +259,12 @@ export function MatchingPage() {
 
     {!hasRequirements ? <section className="card p-6"><h2 className="font-bold">ยังไม่มีข้อมูลพร้อมจับคู่</h2><p className="mt-2 text-sm text-slate-600">ตรวจและยืนยันข้อมูลแผนหลักสูตรกับผลการเรียนในหน้า “ตรวจสอบข้อมูล” ก่อน แล้วกลับมาจับคู่รายวิชาที่นี่</p></section> : <>
     {progress.required.length ? <section className="card overflow-hidden">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold">รายวิชาบังคับ</h2><p className="mt-1 text-sm text-slate-600">รหัสที่ตรงกันจะนับให้อัตโนมัติ; ยืนยันเฉพาะวิชาที่ชื่อใกล้เคียง</p></div><p className="text-sm text-slate-500">{totalRequired} รายการ</p></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[980px] table-fixed text-left text-sm"><colgroup><col className="w-[13%]" /><col className="w-[24%]" /><col className="w-[24%]" /><col className="w-[12%]" /><col className="w-[27%]" /></colgroup><thead className="border-b border-blue-100 bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">รหัสวิชา</th><th className="px-5 py-3 font-medium">ชื่อวิชาตามหลักสูตร</th><th className="px-5 py-3 font-medium">ผลการเรียน</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">การจับคู่</th></tr></thead><tbody>{requiredSorted.map((requirement) => <RequirementRow busy={busyRequirementId === requirement.requirementId} courses={coursesFor(requirement.requirementId)} key={requirement.requirementId} onConfirm={confirm} onSelect={(courseId) => selectCourse(requirement.requirementId, courseId)} requirement={requirement} selectedCourseId={selectedCourses[requirement.requirementId] || ""} />)}</tbody></table></div>
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold">รายวิชาบังคับ</h2><p className="mt-1 text-sm text-slate-600">แสดงเฉพาะรายการที่ต้องจับคู่ด้วยตนเอง</p></div><p className="text-sm text-slate-500">{requiresManualMatching.length} รายการ</p></div>
+      {requiresManualMatching.length ? <div className="border-b border-blue-100"><div className="flex flex-wrap items-end justify-between gap-3 bg-amber-50/60 px-5 py-3"><div><h3 className="font-semibold text-slate-900">รายการที่จับคู่อัตโนมัติไม่ได้</h3><p className="mt-1 text-sm text-slate-600">ไม่พบรหัสวิชาที่ตรงกัน กรุณาเลือกรายวิชาที่ต้องการจับคู่</p></div><p className="text-sm text-slate-500">{requiresManualMatching.length} รายการ</p></div><div className="overflow-x-auto"><table className="w-full min-w-[980px] table-fixed text-left text-sm"><colgroup><col className="w-[13%]" /><col className="w-[24%]" /><col className="w-[24%]" /><col className="w-[12%]" /><col className="w-[27%]" /></colgroup><thead className="border-b border-blue-100 bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">รหัสวิชา</th><th className="px-5 py-3 font-medium">ชื่อวิชาตามหลักสูตร</th><th className="px-5 py-3 font-medium">ผลการเรียน</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">การจับคู่</th></tr></thead><tbody>{requiresManualMatching.map((requirement) => <RequirementRow busy={busyRequirementId === requirement.requirementId} courses={coursesFor(requirement.requirementId)} key={requirement.requirementId} onConfirm={confirm} onSelect={(courseId) => selectCourse(requirement.requirementId, courseId)} requirement={requirement} selectedCourseId={selectedCourses[requirement.requirementId] || ""} />)}</tbody></table></div></div> : null}
     </section> : null}
     {progress.electives.length ? <section className="card overflow-hidden"><div className="flex flex-wrap items-end justify-between gap-3 border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold">หมวดและวิชาเลือก</h2><p className="mt-1 text-sm text-slate-600">ยืนยันรายวิชาที่ผ่านแล้วเข้าแต่ละหมวดเพื่อสะสมหน่วยกิต</p></div><div className="flex items-center gap-3"><p className="text-sm text-slate-500">{progress.electives.length} หมวด</p><button className="btn btn-primary min-h-10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!pendingElectiveSelections.length || savingAllElectives || busyRequirementId !== null} type="button" onClick={() => void confirmAllElectives()}>{savingAllElectives ? "กำลังยืนยัน…" : `ยืนยันทั้งหมด${pendingElectiveSelections.length ? ` (${pendingElectiveSelections.length})` : ""}`}</button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[880px] table-fixed text-left text-sm"><colgroup><col className="w-[29%]" /><col className="w-[25%]" /><col className="w-[12%]" /><col className="w-[34%]" /></colgroup><thead className="border-b border-blue-100 bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">หมวดหลักสูตร</th><th className="px-5 py-3 font-medium">ความก้าวหน้า</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">เพิ่มรายวิชา</th></tr></thead><tbody>{electivesSorted.map((requirement) => <ElectiveRow busy={savingAllElectives || busyRequirementId === requirement.requirementIds[0]} courses={coursesFor(requirement.requirementIds[0], selectedElectiveCourses[requirement.requirementIds[0]] || [])} key={requirement.requirementIds.join("-")} onConfirm={confirmElective} onSelect={(courseIds) => selectElectiveCourses(requirement, courseIds)} requirement={requirement} selectedCourseIds={selectedElectiveCourses[requirement.requirementIds[0]] || []} />)}</tbody></table></div></section> : null}
+    {automaticallyMatchedRequired.length ? <section className="card overflow-hidden"><div className="flex flex-wrap items-end justify-between gap-3 border-b border-emerald-100 bg-emerald-50/60 px-5 py-4"><div><h2 className="font-bold text-slate-900">รายวิชาที่จับคู่อัตโนมัติสำเร็จ</h2><p className="mt-1 text-sm text-slate-600">รายชื่อวิชาที่พบรหัสตรงกัน</p></div><p className="text-sm text-slate-500">{automaticallyMatchedRequired.length} รายการ</p></div><div className="overflow-x-auto"><table className="w-full min-w-[980px] table-fixed text-left text-sm"><colgroup><col className="w-[13%]" /><col className="w-[24%]" /><col className="w-[24%]" /><col className="w-[12%]" /><col className="w-[27%]" /></colgroup><thead className="border-b border-blue-100 bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-medium">รหัสวิชา</th><th className="px-5 py-3 font-medium">ชื่อวิชาตามหลักสูตร</th><th className="px-5 py-3 font-medium">ผลการเรียน</th><th className="px-5 py-3 font-medium">สถานะ</th><th className="px-5 py-3 font-medium">การจับคู่</th></tr></thead><tbody>{automaticallyMatchedRequired.map((requirement) => <RequirementRow busy={busyRequirementId === requirement.requirementId} courses={coursesFor(requirement.requirementId)} key={requirement.requirementId} onConfirm={confirm} onSelect={(courseId) => selectCourse(requirement.requirementId, courseId)} requirement={requirement} selectedCourseId={selectedCourses[requirement.requirementId] || ""} />)}</tbody></table></div></section> : null}
     </>}
+    {showPendingConfirmation ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4" role="presentation"><section aria-describedby="pending-confirmation-description" aria-labelledby="pending-confirmation-title" aria-modal="true" className="card w-full max-w-lg p-6" role="dialog"><h2 id="pending-confirmation-title" className="text-xl font-bold text-slate-900">ยังมีรายการรอยืนยัน</h2><p id="pending-confirmation-description" className="mt-3 text-sm leading-6 text-slate-600">มี {progress.pendingConfirmations} รายการที่ระบบพบชื่อวิชาใกล้เคียง แต่ยังไม่ได้รับการยืนยัน รายการเหล่านี้จะยังไม่นับในสรุปความก้าวหน้า</p><div className="mt-6 flex flex-wrap justify-end gap-2"><button autoFocus className="btn min-h-10" disabled={completing} type="button" onClick={() => setShowPendingConfirmation(false)}>กลับไปตรวจ</button><button className="btn btn-primary min-h-10 disabled:cursor-wait disabled:opacity-60" disabled={completing} type="button" onClick={() => void complete()}>{completing ? "กำลังเปิดสรุป…" : "ดูสรุปต่อ"}</button></div></section></div> : null}
   </section>;
 }

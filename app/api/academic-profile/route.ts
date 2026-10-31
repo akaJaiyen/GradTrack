@@ -20,7 +20,7 @@ export async function GET() {
   const [profileResult, coursesResult, requirementsResult, matchesResult, draftsResult] = await Promise.all([
     db.from("academic_profiles").select("*").eq("workspace_id", workspaceId).maybeSingle(),
     db.from("courses").select("id,code,name_th,name_en,credits,grade,term,year,verified_by_user").eq("workspace_id", workspaceId).eq("verified_by_user", true),
-    db.from("degree_requirements").select("id,category_name,requirement_type,required_course_code,required_course_name,minimum_credits").eq("workspace_id", workspaceId),
+    db.from("degree_requirements").select("id,category_name,requirement_type,required_course_code,required_course_name,minimum_credits").eq("workspace_id", workspaceId).eq("verified_by_user", true),
     db.from("course_matches").select("course_id,degree_requirement_id,status").eq("workspace_id", workspaceId),
     db.from("transcript_course_drafts").select("id,code,name,credits,grade,term,year,status,parser,evidence,document_id").eq("workspace_id", workspaceId).neq("status", "confirmed").order("created_at"),
   ]);

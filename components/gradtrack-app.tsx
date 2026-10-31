@@ -73,7 +73,7 @@ export function GradTrackApp({
     try {
       if (initializeWorkspace) {
         const currentWorkspace = await api("/api/workspace", "POST");
-        if (currentWorkspace.demo) return;
+        if (currentWorkspace.demo) return false;
       }
       const [documents, dashboard, consent] = await Promise.all([
         api("/api/documents"), api("/api/dashboard"), api("/api/consent"),
@@ -88,8 +88,10 @@ export function GradTrackApp({
       })));
       setWorkspace(true);
       setShowConsent(consent.consentVersion !== TYPHOON_CONSENT_VERSION);
+      return true;
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "โหลดข้อมูลไม่สำเร็จ โปรดลองใหม่อีกครั้ง");
+      return false;
     }
   }, []);
   useEffect(() => {
@@ -115,6 +117,12 @@ export function GradTrackApp({
       "",
       `/${locale}/${nextView === "overview" ? "" : nextView}${nextView === "review" ? `?tab=${activeTab}` : ""}`,
     );
+  };
+  const completeMatching = async () => {
+    if (await load()) {
+      setNotice("สรุปผลการจับคู่แล้ว");
+      go("overview");
+    }
   };
   const deleteWorkspace = async () => {
     if (
@@ -190,7 +198,7 @@ export function GradTrackApp({
           </p>
         )}
         {view === "overview" && (
-          <OverviewPage courses={courses} requirements={requirements} matches={matches} goToUpload={() => go("upload")} />
+          <OverviewPage courses={courses} requirements={requirements} matches={matches} goToMatching={() => go("matching")} goToUpload={() => go("upload")} />
         )}
         {view === "upload" && (
           workspace ? <DocumentsPage docs={docs} reload={reloadDocuments} notice={setNotice} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
@@ -199,7 +207,7 @@ export function GradTrackApp({
           <ReviewPage tab={tab} setTab={(nextTab) => go("review", nextTab)} />
         )}
         {view === "matching" && (
-          <MatchingPage />
+          <MatchingPage onComplete={completeMatching} />
         )}
         {view === "privacy" && (
           <PrivacyPage
