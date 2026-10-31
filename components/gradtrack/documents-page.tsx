@@ -129,5 +129,6 @@ function ProcessingStatus({ summary, busy, start }: { summary: ReturnType<typeof
     </div>
     {summary.canStart && <button className="btn btn-primary mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void start()}>เริ่มวิเคราะห์เอกสาร</button>}
     {summary.canRetry && <button className="btn btn-primary mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void start(true)}>ลองประมวลผลเอกสารอีกครั้ง</button>}
+    {summary.canReprocess && <button className="btn mt-4 disabled:cursor-wait disabled:opacity-60" type="button" disabled={busy} onClick={() => void start(true)}>วิเคราะห์เอกสารอีกครั้ง</button>}
   </section>;
 }

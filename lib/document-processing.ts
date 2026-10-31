@@ -14,6 +14,7 @@ export type DocumentProcessingSummary = {
   description: string;
   canStart: boolean;
   canRetry: boolean;
+  canReprocess: boolean;
 };
 
 const documentTitles: Record<AcademicDocumentRole, string> = {
@@ -51,6 +52,7 @@ export function summarizeAcademicDocumentProcessing(
       description: "อัปโหลด Study Plan และ Transcript ให้ครบก่อนเริ่มวิเคราะห์ข้อมูลการเรียน",
       canStart: false,
       canRetry: false,
+      canReprocess: false,
     };
   }
 
@@ -64,6 +66,7 @@ export function summarizeAcademicDocumentProcessing(
       description: `อัปโหลด ${roles[0] === "study_plan" ? "Transcript" : "Study Plan"} เพิ่มก่อน แล้วจึงเริ่มวิเคราะห์ ${documentList} พร้อมกัน`,
       canStart: false,
       canRetry: false,
+      canReprocess: false,
     };
   }
 
@@ -77,6 +80,7 @@ export function summarizeAcademicDocumentProcessing(
       description: `AI กำลังอ่านและรวมข้อมูลจาก ${documentList} คุณสามารถออกจากหน้านี้หรือทำงานส่วนอื่นต่อได้`,
       canStart: false,
       canRetry: false,
+      canReprocess: false,
     };
   }
 
@@ -94,6 +98,7 @@ export function summarizeAcademicDocumentProcessing(
         : `มีเอกสารบางไฟล์อ่านไม่สำเร็จ โปรดลองประมวลผล ${documentList} อีกครั้ง`,
       canStart: false,
       canRetry: true,
+      canReprocess: false,
     };
   }
 
@@ -107,6 +112,7 @@ export function summarizeAcademicDocumentProcessing(
       description: `ระบบจะส่ง ${documentList} ให้ AI พร้อมกันเมื่อคุณกดเริ่มวิเคราะห์`,
       canStart: true,
       canRetry: false,
+      canReprocess: false,
     };
   }
 
@@ -119,5 +125,6 @@ export function summarizeAcademicDocumentProcessing(
     description: `ระบบประมวลผล ${documentList} แล้ว คุณสามารถไปตรวจสอบข้อมูลก่อนนำไปใช้วางแผนการเรียน`,
     canStart: false,
     canRetry: false,
+    canReprocess: true,
   };
 }

@@ -9,6 +9,7 @@ import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
 import { hasTyphoonConsent } from "@/lib/consent";
 import { parseKuTranscriptPdf, passesTranscriptAcceptanceGate, type TranscriptDraft } from "@/lib/ku-transcript-parser";
+import { parseStudyPlanMarkdown, parseStudyPlanPdf } from "@/lib/study-plan-parser";
 
 export const runtime = "nodejs";
 
@@ -85,6 +86,9 @@ export async function POST(request: Request) {
         stage = "typhoon_ocr";
         const bytes = new Uint8Array(await file.arrayBuffer());
         const kuTranscript = document.type === "transcript" && document.mime_type === "application/pdf" ? await parseKuTranscriptPdf(bytes) : null;
+        const nativeStudyPlan = document.type === "study_plan" && document.mime_type === "application/pdf"
+          ? await parseStudyPlanPdf(bytes, document.id)
+          : null;
         const gate = kuTranscript && passesTranscriptAcceptanceGate(kuTranscript.drafts, kuTranscript.pageCount);
         if (kuTranscript && gate?.ok) {
           transcriptDrafts.push({ documentId: document.id, drafts: kuTranscript.drafts });
@@ -93,12 +97,24 @@ export async function POST(request: Request) {
           extractionAttempts.push({ document, extraction: parserExtraction });
           continue;
         }
+        if (nativeStudyPlan?.curriculum.requiredCourses.length) {
+          extractionAttempts.push({ document, extraction: nativeStudyPlan });
+          continue;
+        }
         const pages = document.mime_type === "application/pdf" ? await renderPdfPages(bytes) : [Buffer.from(bytes).toString("base64")];
         const markdown = await typhoonOcrPages(pages);
         const { error: saveOcrError } = await db.from("document_extractions").insert({ document_id: document.id, raw_extraction_json: { text: markdown }, confidence: 0.5, extraction_version: "typhoon-ocr-v1" });
         if (saveOcrError) throw new Error("Could not save OCR output");
         stage = "typhoon_text";
-        const extraction = await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" });
+        const parsedStudyPlan = document.type === "study_plan"
+          ? parseStudyPlanMarkdown(markdown, document.id)
+          : null;
+        // The OCR output for a term-by-term Study Plan has stable course rows.
+        // Prefer that deterministic result so a slow or schema-valid empty text
+        // model response cannot discard an otherwise readable curriculum.
+        const extraction = parsedStudyPlan?.curriculum.requiredCourses.length
+          ? parsedStudyPlan
+          : await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" });
         if (document.type === "transcript" && (!kuTranscript || !gate?.ok)) {
           const aiDrafts = aiTranscriptDrafts(extraction, pages.length);
           if (passesTranscriptAcceptanceGate(aiDrafts, pages.length).ok) transcriptDrafts.push({ documentId: document.id, drafts: aiDrafts });

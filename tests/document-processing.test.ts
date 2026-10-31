@@ -44,4 +44,11 @@ describe("academic document processing summary", () => {
   it("does not expose a retry before documents exist", () => {
     expect(summarizeAcademicDocumentProcessing([])).toMatchObject({ state: "empty", canStart: false, canRetry: false });
   });
+
+  it("allows an explicit reprocess after a completed run", () => {
+    expect(summarizeAcademicDocumentProcessing([
+      { type: "study_plan", status: "ready" },
+      { type: "transcript", status: "ready" },
+    ])).toMatchObject({ state: "complete", canReprocess: true });
+  });
 });
