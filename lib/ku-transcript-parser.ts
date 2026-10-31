@@ -23,6 +23,85 @@ function termFromHeading(value: string): { term: AcademicTerm; year: number } | 
   return summer ? { term: "summer", year: Number(summer[1]) } : null;
 }
 
+function cleanOcrLine(value: string) {
+  return value
+    .replace(/^\s*\|?|\|?\s*$/g, "")
+    .replace(/\|/g, " ")
+    .replace(/[*_`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function transcriptRow(value: string) {
+  const match = value.match(/^(?:\|?\s*)(\d{8})\s+([\s\S]+?)\s+(A|B\+|B|C\+|C|D\+|D|F|P|S|W|I|N)\s+([1-9](?:\.\d)?)(?:\*)?\s*$/i);
+  if (!match) return null;
+  return {
+    code: normalizedCourseCode(match[1]),
+    name: match[2].trim(),
+    grade: match[3].toUpperCase() as Grade,
+    credits: Number(match[4]),
+  };
+}
+
+/** Parses OCR Markdown for the regular two-column KU transcript layout. */
+export function parseKuTranscriptMarkdown(markdown: string): TranscriptDraft[] {
+  const result: TranscriptDraft[] = [];
+  let page = 1;
+  type TermContext = { term: AcademicTerm; year: number; header: string };
+  let active: TermContext | null = null;
+  let pending: { text: string; page: number; context: TermContext | null } | null = null;
+  const flush = () => {
+    if (!pending) return;
+    const parsed = transcriptRow(pending.text);
+    if (parsed) {
+      const context = pending.context;
+      result.push({
+        ...parsed,
+        term: context?.term ?? null,
+        academicYear: context?.year ?? null,
+        evidence: { page: pending.page, rowText: pending.text, termHeader: context?.header ?? "" },
+        status: context ? "ready" : "needs_review",
+        parser: "ai",
+      });
+    }
+    pending = null;
+  };
+
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const pageMarker = rawLine.match(/^---\s*Page\s+(\d+)\s*---$/i);
+    if (pageMarker) {
+      flush();
+      page = Number(pageMarker[1]);
+      continue;
+    }
+    const line = cleanOcrLine(rawLine);
+    if (!line || /^:?-{3,}:?$/.test(line)) continue;
+    const heading = termFromHeading(line.replace(/^#+\s*/, ""));
+    if (heading) {
+      flush();
+      active = { ...heading, header: line.replace(/^#+\s*/, "") };
+      continue;
+    }
+    if (/^(?:sem\.?\s*G\.?P\.?A\.?|cum\.?\s*G\.?P\.?A\.?|cum\.?\s*CR\.?|Nothing follows)/i.test(line)) {
+      flush();
+      continue;
+    }
+    if (/^\d{8}\b/.test(line)) {
+      flush();
+      pending = { text: line, page, context: active };
+      continue;
+    }
+    if (pending && !/^(?:COURSE|CODE|GR|CR|Explanation:|[123]\.)/i.test(line)) {
+      const result = pending.text.match(/\s+(A|B\+|B|C\+|C|D\+|D|F|P|S|W|I|N)\s+([1-9](?:\.\d)?)(?:\*)?\s*$/i);
+      pending.text = result?.index === undefined
+        ? `${pending.text} ${line}`
+        : `${pending.text.slice(0, result.index).trimEnd()} ${line} ${pending.text.slice(result.index).trimStart()}`;
+    }
+  }
+  flush();
+  return result.filter(row => row.name && Number.isFinite(row.credits) && row.credits > 0);
+}
+
 function linesForColumn(items: PositionedText[], page: number, column: "left" | "right", midpoint: number) {
   const selected = items.filter(item => item.str.trim() && (column === "left" ? item.x < midpoint : item.x >= midpoint));
   const lines: Array<{ y: number; parts: PositionedText[] }> = [];

@@ -3,12 +3,13 @@ import { z } from "zod";
 import { error, unavailable } from "@/lib/api";
 import { emptyAcademicProfile, mergeAcademicExtractions, requirementsFromProfile } from "@/lib/academic-profile";
 import { extractTyphoonProfile, isTyphoonRateLimited, renderPdfPages, TyphoonRequestError, typhoonOcrPages } from "@/lib/typhoon";
-import { academicProfileExtractionSchema, normalizedCourseCode, type AcademicProfileExtraction } from "@/lib/extraction";
+import { academicProfileExtractionSchema } from "@/lib/extraction";
 import { documentExtractionErrorCode, type DocumentExtractionErrorCode, type ExtractionStage } from "@/lib/document-extraction-error";
 import { workspaceContext } from "@/lib/server-workspace";
 import { curriculumProgress } from "@/lib/academic-progress";
 import { hasTyphoonConsent } from "@/lib/consent";
-import { parseKuTranscriptPdf, passesTranscriptAcceptanceGate, type TranscriptDraft } from "@/lib/ku-transcript-parser";
+import { parseKuTranscriptMarkdown, parseKuTranscriptPdf, passesTranscriptAcceptanceGate, type TranscriptDraft } from "@/lib/ku-transcript-parser";
+import { aiTranscriptDrafts } from "@/lib/transcript-drafts";
 import { parseStudyPlanMarkdown, parseStudyPlanPdf } from "@/lib/study-plan-parser";
 
 export const runtime = "nodejs";
@@ -85,18 +86,6 @@ export async function PATCH(request: Request) {
 
 const input = z.object({ consent: z.boolean() });
 
-function aiTranscriptDrafts(extraction: AcademicProfileExtraction, pageCount: number): TranscriptDraft[] {
-  return extraction.completedCourses.map((course, index) => {
-    const evidence = extraction.evidence.find(item => item.path === `completedCourses.${index}`);
-    const header = evidence?.text.match(/(?:(?:First|Second|Third) Semester|Summer Session)\s+(?:19\d{2}|2\d{3})/i)?.[0] || "";
-    const rowText = evidence?.text || "";
-    const hasCourseEvidence = rowText.includes(course.code) && rowText.includes(String(course.credits)) && (!course.grade || new RegExp(`(?:^|\\s)${course.grade.replace("+", "\\+")}(?:\\s|$)`).test(rowText));
-    const hasCleanName = !/(?:^|\s)(?:A|B\+|B|C\+|C|D\+|D|F|P|S|W|I|N)\s+\d/.test(course.name);
-    const status = evidence && evidence.page && evidence.page <= pageCount && course.term && course.academicYear && header && hasCourseEvidence && hasCleanName ? "ready" : "needs_review";
-    return { code: normalizedCourseCode(course.code), name: course.name, credits: course.credits, grade: course.grade, term: course.term, academicYear: course.academicYear, evidence: { page: evidence?.page || 0, rowText, termHeader: header }, status, parser: "ai" };
-  });
-}
-
 export async function POST(request: Request) {
   const body = input.safeParse(await request.json().catch(() => null));
   if (!body.success) return error("Invalid extraction request");
@@ -158,15 +147,28 @@ export async function POST(request: Request) {
         const parsedStudyPlan = document.type === "study_plan"
           ? parseStudyPlanMarkdown(markdown, document.id)
           : null;
+        const ocrTranscriptDrafts = document.type === "transcript" ? parseKuTranscriptMarkdown(markdown) : [];
+        const ocrTranscriptAccepted = document.type === "transcript" && passesTranscriptAcceptanceGate(ocrTranscriptDrafts, pages.length).ok;
         // The OCR output for a term-by-term Study Plan has stable course rows.
         // Prefer that deterministic result so a slow or schema-valid empty text
         // model response cannot discard an otherwise readable curriculum.
         const extraction = parsedStudyPlan?.curriculum.requiredCourses.length
           ? parsedStudyPlan
-          : await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" });
+          : ocrTranscriptAccepted
+            ? (() => {
+              const profile = emptyAcademicProfile();
+              profile.sources = [{ sourceDocumentId: document.id, detectedKind: "transcript" }];
+              return profile;
+            })()
+            : await extractTyphoonProfile({ text: markdown, sourceDocumentId: document.id, sourceRole: document.type as "study_plan" | "transcript" });
         if (document.type === "transcript" && (!kuTranscript || !gate?.ok)) {
-          const aiDrafts = aiTranscriptDrafts(extraction, pages.length);
-          if (passesTranscriptAcceptanceGate(aiDrafts, pages.length).ok) transcriptDrafts.push({ documentId: document.id, drafts: aiDrafts });
+          if (ocrTranscriptAccepted) {
+            transcriptDrafts.push({ documentId: document.id, drafts: ocrTranscriptDrafts });
+          } else {
+            const aiDrafts = aiTranscriptDrafts(extraction, pages.length);
+            const combinedDrafts = [...ocrTranscriptDrafts, ...aiDrafts.filter(draft => !ocrTranscriptDrafts.some(ocrDraft => ocrDraft.code === draft.code))];
+            if (combinedDrafts.length) transcriptDrafts.push({ documentId: document.id, drafts: combinedDrafts });
+          }
         }
         extractionAttempts.push({ document, extraction });
       } catch (caught) {
