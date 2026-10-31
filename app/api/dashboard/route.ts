@@ -8,7 +8,7 @@ export async function GET() {
   if (!workspaceId) return error("Unauthorized", 401);
   const [courses, requirements, matches, plans, scenarios] = await Promise.all([
     db.from("courses").select("*").eq("workspace_id", workspaceId).eq("verified_by_user", true).order("created_at"),
-    db.from("degree_requirements").select("*").eq("workspace_id", workspaceId).order("created_at"),
+    db.from("degree_requirements").select("*").eq("workspace_id", workspaceId).eq("verified_by_user", true).order("created_at"),
     db.from("course_matches").select("*").eq("workspace_id", workspaceId),
     db.from("study_plans").select("*, planned_courses(*, planner_meetings(*))").eq("workspace_id", workspaceId).order("created_at"),
     db.from("grade_scenarios").select("*, grade_scenario_courses(*)").eq("workspace_id", workspaceId).order("created_at"),

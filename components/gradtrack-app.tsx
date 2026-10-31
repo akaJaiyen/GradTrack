@@ -10,6 +10,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { DocumentsPage } from "./gradtrack/documents-page";
+import { OverviewPage } from "./gradtrack/overview-page";
 import { PrivacyPage } from "./gradtrack/privacy-page";
 import { ReviewPage } from "./gradtrack/review-page";
 import {
@@ -21,6 +22,7 @@ import {
   type View,
 } from "./gradtrack/shared";
 import type { Course, Requirement } from "@/lib/types";
+import type { ConfirmedMatch } from "@/lib/academic";
 import { TYPHOON_CONSENT_VERSION } from "@/lib/consent";
 
 const navigationItems = [
@@ -48,6 +50,7 @@ export function GradTrackApp({
   const [docs, setDocs] = useState<Doc[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
+  const [matches, setMatches] = useState<ConfirmedMatch[]>([]);
   const [workspace, setWorkspace] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [showConsent, setShowConsent] = useState(false);
@@ -69,6 +72,11 @@ export function GradTrackApp({
       setDocs(documents.data);
       setCourses(dashboard.courses.map(fromCourse));
       setRequirements(dashboard.requirements.map(fromRequirement));
+      setMatches(dashboard.matches.map((match: ConfirmedMatch) => ({
+        course_id: match.course_id,
+        degree_requirement_id: match.degree_requirement_id,
+        status: match.status,
+      })));
       setWorkspace(true);
       setShowConsent(consent.consentVersion !== TYPHOON_CONSENT_VERSION);
     } catch (error) {
@@ -110,6 +118,7 @@ export function GradTrackApp({
       setDocs([]);
       setCourses([]);
       setRequirements([]);
+      setMatches([]);
       setView("overview");
       history.replaceState(null, "", `/${locale}/`);
       setNotice("ลบ workspace แล้ว");
@@ -170,15 +179,7 @@ export function GradTrackApp({
           </p>
         )}
         {view === "overview" && (
-          <section className="card p-6">
-            <h2 className="font-bold">เริ่มต้นด้วยการอัปโหลดเอกสาร</h2>
-            <button
-              className="btn btn-primary mt-4"
-              onClick={() => go("upload")}
-            >
-              ไปหน้าเอกสารของฉัน
-            </button>
-          </section>
+          <OverviewPage courses={courses} requirements={requirements} matches={matches} goToUpload={() => go("upload")} />
         )}
         {view === "upload" && (
           workspace ? <DocumentsPage docs={docs} reload={reloadDocuments} notice={setNotice} /> : <section className="card p-6"><p className="text-sm text-slate-600">กำลังเตรียมพื้นที่เก็บเอกสาร…</p></section>
