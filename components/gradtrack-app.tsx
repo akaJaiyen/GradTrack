@@ -10,6 +10,7 @@ import {
   Wand2,
 } from "lucide-react";
 import { DocumentsPage } from "./gradtrack/documents-page";
+import { MatchingPage } from "./gradtrack/matching-page";
 import { OverviewPage } from "./gradtrack/overview-page";
 import { PrivacyPage } from "./gradtrack/privacy-page";
 import { ReviewPage } from "./gradtrack/review-page";
@@ -168,6 +169,8 @@ export function GradTrackApp({
               ? "ตรวจสอบข้อมูล"
               : view === "privacy"
                 ? "ความเป็นส่วนตัว"
+                : view === "matching"
+                  ? "จับคู่รายวิชา"
                 : "GradTrack"}
         </h1>
         {notice && (
@@ -188,13 +191,7 @@ export function GradTrackApp({
           <ReviewPage tab={tab} setTab={(nextTab) => go("review", nextTab)} />
         )}
         {view === "matching" && (
-          <section className="card p-6">
-            <h2 className="font-bold">จับคู่รายวิชา</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              ตรวจหลักสูตรและผลการเรียนจากหน้าตรวจสอบข้อมูลก่อน
-              แล้วจึงจับคู่รายวิชาที่นี่
-            </p>
-          </section>
+          <MatchingPage />
         )}
         {view === "privacy" && (
           <PrivacyPage
