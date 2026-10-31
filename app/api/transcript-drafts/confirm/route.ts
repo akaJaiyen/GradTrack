@@ -25,9 +25,8 @@ export async function POST(request: NextRequest) {
     const { error: insertError } = await db.from("courses").insert(accepted.map(draft => ({ workspace_id: workspaceId, code: draft.code, name_th: draft.name, credits: draft.credits, grade: draft.grade, term: draft.term, year: draft.year, source: "transcript", verified_by_user: true })));
     if (insertError) return error("Could not confirm transcript courses", 500);
   }
-  const acceptedIds = accepted.map(draft => draft.id);
-  if (acceptedIds.length) {
-    const { error: updateError } = await db.from("transcript_course_drafts").update({ status: "confirmed" }).in("id", acceptedIds).eq("workspace_id", workspaceId);
+  if (drafts.length) {
+    const { error: updateError } = await db.from("transcript_course_drafts").update({ status: "confirmed" }).in("id", drafts.map(draft => draft.id)).eq("workspace_id", workspaceId);
     if (updateError) return error("Could not mark transcript drafts as confirmed", 500);
   }
   return NextResponse.json({ confirmed: accepted.length, skipped: drafts.length - accepted.length });
